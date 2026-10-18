@@ -621,9 +621,9 @@
         '<svg class="compass" viewBox="0 0 230 230" aria-hidden="true" style="font-family:var(--sans)"><g id="dial"><circle cx="115" cy="115" r="104" fill="none" stroke="rgba(255,255,255,.12)"/><circle cx="115" cy="115" r="86" fill="none" stroke="rgba(230,190,110,.25)" stroke-dasharray="1 7"/>' +
         '<g stroke="rgba(255,255,255,.35)" stroke-width="1.5" stroke-linecap="round"><path d="M115 14v10M115 206v10M14 115h10M206 115h10M43.6 43.6l5.6 5.6M180.8 180.8l5.6 5.6M43.6 186.4l5.6-5.6M180.8 49.2l5.6-5.6"/></g>' +
         '<text x="115" y="44" fill="#F4EFE6" font-size="12" font-weight="800" text-anchor="middle">С</text><text x="188" y="119" fill="#A7AEC0" font-size="11" font-weight="700" text-anchor="middle">В</text><text x="115" y="194" fill="#A7AEC0" font-size="11" font-weight="700" text-anchor="middle">Ю</text><text x="42" y="119" fill="#A7AEC0" font-size="11" font-weight="700" text-anchor="middle">З</text>' +
-        '<g class="needle" id="needle" style="transform:rotate(' + qb.toFixed(1) + 'deg)"><path d="M115 40l9 75h-18z" fill="#E6BE6E"/><path d="M115 190l9-75h-18z" fill="rgba(255,255,255,.18)"/><rect x="106" y="2" width="18" height="18" rx="2" fill="#0A0F1C" stroke="#E6BE6E" stroke-width="1.5"/><path d="M106 8h18" stroke="#E6BE6E" stroke-width="1.5"/></g></g>' +
+        '<g id="needle" transform="rotate(' + qb.toFixed(1) + ' 115 115)"><path id="needleMain" d="M115 40l9 75h-18z" fill="#E6BE6E"/><path d="M115 190l9-75h-18z" fill="rgba(255,255,255,.18)"/><rect x="106" y="2" width="18" height="18" rx="2" fill="#0A0F1C" stroke="#E6BE6E" stroke-width="1.5"/><path d="M106 8h18" stroke="#E6BE6E" stroke-width="1.5"/></g></g>' +
         '<circle cx="115" cy="115" r="7" fill="#0A0F1C" stroke="#E6BE6E" stroke-width="2"/></svg>' +
-        '<div style="position:absolute;left:0;right:0;bottom:16px;text-align:center;padding:0 20px;display:flex;flex-direction:column;gap:8px;align-items:center"><span id="qiblaHint" style="font-size:14.5px;font-weight:800">' + (S.compassOn ? 'Поворачивайте телефон, держа его ровно' : 'Компас показывает направление от севера') + '</span>' + (S.compassOn ? '' : '<button class="btn gold sm" data-a="compass">Включить компас</button>') + '</div></div>');
+        '<div style="position:absolute;left:0;right:0;bottom:16px;text-align:center;padding:0 20px;display:flex;flex-direction:column;gap:8px;align-items:center"><span id="qiblaHint" style="font-size:14.5px;font-weight:800">' + (S.compassOn ? 'Поворачивайте телефон, держа его ровно' : 'Компас показывает направление от севера') + '</span>' + (S.compassOn ? '<span id="qiblaDeg" class="small num" style="color:#C9CEDA">Ждём данные компаса…</span>' : '<button class="btn gold sm" data-a="compass">Включить компас</button>') + '</div></div>');
     } else out.push('<div class="card pad" style="display:flex;flex-direction:column;gap:10px"><span style="font-size:16px;font-weight:800">Кибла</span><span class="small sub">Укажите город или разрешите геолокацию, чтобы найти направление на Каабу.</span><button class="btn gold sm" data-a="locate">Определить автоматически</button></div>');
 
     // календарь хиджры
@@ -789,34 +789,62 @@
   }
 
   /* ===== компас ===== */
+  /* Курс телефона (куда смотрит верх экрана) в градусах по часовой стрелке от севера.
+     Порядок источников: 1) webkitCompassHeading (iPhone, самый точный); 2) deviceorientationabsolute (Android);
+     3) Telegram DeviceOrientation. Значения сглаживаются, поворот рисуется SVG-атрибутом (надёжно в Safari). */
+  let compassSource = '', compassSmooth = null, compassGotData = false;
   function startCompass() {
     const qb = qiblaBearing(); if (qb == null) return;
     S.compassOn = true; render();
-    const update = (heading) => {
-      if (heading == null || isNaN(heading)) return;
+    const update = (raw, src) => {
+      if (raw == null || isNaN(raw)) return;
+      compassGotData = true; compassSource = src;
+      const h0 = ((raw % 360) + 360) % 360;
+      if (compassSmooth == null) compassSmooth = h0;
+      else { const d = ((h0 - compassSmooth + 540) % 360) - 180; compassSmooth = (compassSmooth + d * 0.3 + 360) % 360; }
+      const heading = compassSmooth;
       S.heading = heading;
       const rot = ((qb - heading) % 360 + 360) % 360;
       const dial = document.getElementById('dial');
-      if (dial) dial.style.transform = 'rotate(' + (-heading).toFixed(1) + 'deg)';
-      if (dial) dial.style.transformOrigin = '115px 115px';
-      const nd = document.getElementById('needle'); if (nd) nd.style.transform = 'rotate(' + qb.toFixed(1) + 'deg)';
-      const aligned = rot < 5 || rot > 355;
+      if (dial) dial.setAttribute('transform', 'rotate(' + (-heading).toFixed(1) + ' 115 115)');
+      const aligned = rot < 4 || rot > 356;
+      const nd = document.getElementById('needleMain'); if (nd) nd.setAttribute('fill', aligned ? '#7FE0BD' : '#E6BE6E');
       const hint = document.getElementById('qiblaHint');
-      if (hint) hint.textContent = aligned ? 'Вы смотрите на Каабу' : 'Поворачивайте телефон, держа его ровно';
+      if (hint) hint.textContent = aligned ? 'Вы смотрите на Каабу' : (rot < 180 ? 'Поворачивайтесь вправо' : 'Поворачивайтесь влево') + ', держа телефон ровно';
+      const deg = document.getElementById('qiblaDeg');
+      if (deg) deg.textContent = 'Телефон смотрит на ' + Math.round(heading) + '° · кибла ' + Math.round(qb) + '°';
       if (aligned && !S.qiblaAligned) haptic('notify', 'success');
       S.qiblaAligned = aligned;
     };
-    if (tg && ver('8.0') && tg.DeviceOrientation) {
-      tg.onEvent('deviceOrientationChanged', () => { const a = tg.DeviceOrientation.alpha; if (a != null) update((360 - (a * 180 / Math.PI)) % 360); });
-      tg.DeviceOrientation.start({ refresh_rate: 60, need_absolute: true }, (ok) => { if (!ok) browserCompass(update); });
-    } else browserCompass(update);
+    const useTelegram = () => {
+      if (!(tg && ver('8.0') && tg.DeviceOrientation)) { toast('Компас недоступен на этом устройстве'); return; }
+      const ios = tg.platform === 'ios' || tg.platform === 'macos';
+      tg.onEvent('deviceOrientationChanged', () => {
+        const a = tg.DeviceOrientation.alpha; if (a == null) return;
+        const deg = a * 180 / Math.PI;
+        update(ios ? 270 - deg : 360 - deg, 'tg');
+      });
+      tg.DeviceOrientation.start({ refresh_rate: 50, need_absolute: true }, (ok) => { if (!ok) toast('Компас недоступен'); });
+    };
+    browserCompass(update, useTelegram);
   }
-  function browserCompass(update) {
-    const handler = (e) => { if (e.webkitCompassHeading != null) update(e.webkitCompassHeading); else if (e.absolute && e.alpha != null) update((360 - e.alpha) % 360); };
-    const attach = () => { window.addEventListener('deviceorientationabsolute', handler); window.addEventListener('deviceorientation', handler); };
-    if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function') DeviceOrientationEvent.requestPermission().then((r) => { if (r === 'granted') attach(); else toast('Нет доступа к компасу'); }).catch(() => toast('Компас недоступен'));
-    else if (window.DeviceOrientationEvent) attach();
-    else toast('Компас недоступен на этом устройстве');
+  function browserCompass(update, fallback) {
+    let used = false;
+    const handler = (e) => {
+      if (e.webkitCompassHeading != null && !isNaN(e.webkitCompassHeading)) update(e.webkitCompassHeading, 'ios');
+      else if (e.absolute && e.alpha != null) update(360 - e.alpha, 'abs');
+    };
+    const attach = () => {
+      used = true;
+      window.addEventListener('deviceorientationabsolute', handler);
+      window.addEventListener('deviceorientation', handler);
+      setTimeout(() => { if (!compassGotData) { window.removeEventListener('deviceorientationabsolute', handler); window.removeEventListener('deviceorientation', handler); fallback(); } }, 1500);
+    };
+    if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function') {
+      DeviceOrientationEvent.requestPermission().then((r) => { if (r === 'granted') attach(); else fallback(); }).catch(() => fallback());
+    } else if (window.DeviceOrientationEvent) attach();
+    else fallback();
+    return used;
   }
 
   /* ===== Коран ===== */
