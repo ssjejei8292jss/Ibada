@@ -35,3 +35,16 @@ SOFTWARE.
 
 saadi-index.js содержит только числа — объём перевода и толкования по каждому аяту.
 Для подсчёта длины перевода использован набор fawazahmed0/quran-api (издание rus-elmirkuliev, Unlicense).
+
+----------------------------------------------------------------------
+Арабский текст Корана и шрифт (хранятся в приложении: папки quran/ и fonts/)
+
+Текст: King Fahd Glorious Qur'an Printing Complex (Комплекс короля Фахда по изданию Корана, Медина),
+Unicode-текст риваята Хафса, версия 18 (https://qurancomplex.gov.sa/en/techquran/dev/),
+в виде, опубликованном в наборе thetruetruth/quran-data-kfgqpc (hafs/data/hafsData_v18.json).
+Текст не изменялся: файлы quran/N.json содержат те же строки аятов, номера страниц мусхафа и джузов.
+Проверка: буквенный состав всех 6 236 аятов совпадает с независимыми наборами Khaled Hosny (quran-data)
+и Quran Academy (quran-text).
+
+Шрифт: KFGQPC HAFS Uthmanic Script, версия 18 (fonts/kfgqpc-hafs-18.woff2) — King Fahd Glorious Qur'an Printing Complex.
+Права на текст и шрифт принадлежат Комплексу; они распространяются им бесплатно для отображения Корана.
