@@ -94,35 +94,9 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .seg.mini button { min-height: 34px; font-size: 12px; padding: 0 12px; border-radius: 11px; }
 .icon-btn { width: 44px; height: 44px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface); display: inline-flex; align-items: center; justify-content: center; color: var(--text); flex: none; }
 
-/* шапка */
-.top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 0 4px; }
-.date-hijri { font-family: var(--serif); font-size: 24px; font-weight: 600; line-height: 1.1; }
-.daytype { flex: none; min-height: 40px; padding: 0 12px; border-radius: 20px; border: 1px solid var(--line); background: var(--surface); font-size: 13px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; }
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
 
-/* небо */
-.sky { position: relative; height: 318px; border-radius: 50vw 50vw 32px 32px / 179px 179px 32px 32px; overflow: hidden; color: #fff; box-shadow: var(--hero-shadow); }
-.sky svg { position: absolute; }
-.sky-text { position: absolute; left: 0; right: 0; top: 54px; display: flex; flex-direction: column; align-items: center; gap: 4px; text-align: center; padding: 0 24px; }
-.sky-label { font-size: 11px; font-weight: 800; letter-spacing: 0.16em; text-transform: uppercase; opacity: 0.88; }
-.sky-name { font-family: var(--serif); font-size: 50px; font-weight: 600; line-height: 1; text-shadow: 0 2px 18px rgba(10,15,40,0.35); }
-.sky-time { font-size: 15px; font-weight: 600; opacity: 0.94; }
-.sky-empty { position: absolute; left: 24px; right: 24px; bottom: 28px; display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
-
-/* итог дня */
-.summary { display: flex; align-items: center; gap: 14px; padding: 14px 16px; width: 100%; text-align: left; }
-.ring { position: relative; flex: none; }
-.ring span { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-weight: 800; }
-
-/* намазы */
-.pr { padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
-.pr.now { background: var(--surface2); }
-.glyph { width: 40px; height: 40px; flex: none; border-radius: 14px; background: var(--surface2); color: var(--sub); display: flex; align-items: center; justify-content: center; }
-.pr.now .glyph { background: var(--gold-soft); color: var(--gold); }
-.pr.now .st-none { background: var(--surface); box-shadow: inset 0 0 0 1px var(--line2); }
-.pr-name { font-size: 16px; font-weight: 800; }
-.badge { font-size: 10.5px; font-weight: 800; letter-spacing: 0.05em; padding: 3px 8px; border-radius: 999px; background: var(--gold); color: var(--on-gold); }
-.pill { min-height: 40px; padding: 0 10px 0 12px; border: 0; border-radius: 14px; font-size: 13px; font-weight: 800; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+/* статусы намаза */
 .st-none { background: transparent; color: var(--text); box-shadow: inset 0 0 0 1px var(--line2); }
 .st-mosque { background: var(--gold-soft); color: var(--gold-hi); }
 .st-jamaat { background: var(--blue-soft); color: var(--blue-text); }
@@ -130,22 +104,8 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .st-done { background: var(--emerald-soft); color: var(--emerald-text); }
 .st-qada { background: var(--amber-soft); color: var(--amber-text); }
 .st-missed { background: var(--rose-soft); color: var(--rose); }
-.check { width: 44px; height: 44px; flex: none; border-radius: 50%; border: 1.5px solid var(--line2); background: transparent; color: var(--sub); display: flex; align-items: center; justify-content: center; padding: 0; transition: background .2s; }
-.check.on { background: var(--emerald); border-color: var(--emerald); color: var(--on-emerald); }
-.subs { display: flex; flex-wrap: wrap; gap: 6px; padding-left: 52px; }
-.sub-chip { min-height: 34px; padding: 0 11px; border-radius: 11px; border: 1px solid var(--line2); background: transparent; color: var(--sub); font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; gap: 5px; }
-.sub-chip.on { background: var(--emerald-soft); color: var(--emerald-text); border-color: transparent; }
-
-/* плитки */
-.bento { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.tile { min-height: 124px; padding: 16px; border-radius: 24px; background: var(--surface); border: 1px solid var(--line); display: flex; flex-direction: column; justify-content: space-between; text-align: left; box-shadow: var(--card-shadow); }
-.tile.wide { grid-column: span 2; min-height: 0; flex-direction: row; align-items: center; gap: 14px; justify-content: flex-start; }
-.tile-title { font-size: 16px; font-weight: 800; }
-.arch-ico { width: 48px; height: 56px; flex: none; border-radius: 24px 24px 10px 10px; background: var(--gold-soft); color: var(--gold); display: flex; align-items: center; justify-content: center; }
 .bar { height: 5px; border-radius: 3px; background: var(--track); overflow: hidden; display: block; }
 .bar > span { display: block; height: 100%; border-radius: 3px; background: var(--gold); transition: width .3s; }
-.tag { align-self: flex-start; font-size: 11px; font-weight: 800; letter-spacing: 0.08em; padding: 5px 9px; border-radius: 999px; background: var(--emerald-soft); color: var(--emerald-text); }
-.tag.gold { background: var(--gold-soft); color: var(--gold-hi); }
 
 /* строки доп. сунны */
 .x-row { display: flex; align-items: center; gap: 12px; padding: 10px 16px; }
@@ -319,47 +279,7 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 :root.lowfx.light { --surface: rgba(255,255,255,0.94); --tab-bg: rgba(255,255,255,0.96); }
 :root.lowfx .sheet { -webkit-backdrop-filter: none; backdrop-filter: none; }
 
-/* текст прямо на небе */
-.top .sub, .on-sky { color: var(--on-sky); }
-.top .date-hijri, .screen > .h1, .screen > .between .h2, .screen > .h2 { text-shadow: 0 1px 14px rgba(4,8,22,.28); }
-:root.light .top .date-hijri, :root.light .screen > .h1, :root.light .screen > .between .h2, :root.light .screen > .h2 { text-shadow: none; }
-.screen > .between .sub, .screen > .between > .small { color: var(--on-sky); }
 .dnote { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12.5px; font-weight: 800; color: var(--gold-hi); }
-
-/* михраб — главное действие */
-.hero { position: relative; min-height: 410px; padding: 78px 22px 22px; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 6px; color: var(--hero-ink); }
-.hero > :not(.hero-arch) { position: relative; }
-.hero-arch { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-.hero-arch .o { fill: none; stroke: var(--gold); stroke-width: 1.4; vector-effect: non-scaling-stroke; opacity: .9; }
-.hero-arch .i { fill: none; stroke: var(--gold); stroke-width: 1; vector-effect: non-scaling-stroke; opacity: .32; }
-.hero > .hero-fin { position: absolute; left: 50%; top: -17px; margin-left: -14px; width: 28px; height: 28px; color: var(--gold); }
-.hero-fin svg { display: block; filter: drop-shadow(0 0 6px rgba(230,190,110,.5)); }
-.hero-eb { font-size: 11px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; opacity: .86; }
-.hero-name { font-family: var(--serif); font-size: 62px; font-weight: 600; line-height: .95; text-shadow: 0 2px 24px rgba(5,8,25,.32); }
-:root.light .hero-name { text-shadow: none; }
-.hero-line { font-size: 15px; font-weight: 600; opacity: .94; }
-.hero-line2 { font-size: 13px; font-weight: 700; color: var(--gold-hi); }
-.hero-arc { width: 100%; height: auto; margin: 8px 0 2px; overflow: visible; }
-.hero-act { margin-top: auto; width: 100%; display: flex; flex-direction: column; gap: 8px; align-items: center; }
-.hero-act .btn.gold { width: 100%; min-height: 54px; font-size: 16px; border-radius: 18px; box-shadow: 0 10px 30px rgba(230,190,110,.22); }
-.hero-st { min-height: 36px; padding: 0 12px; border: 0; border-radius: 18px; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 800; }
-.hero-hint { font-size: 12.5px; opacity: .8; }
-.hero.lit .hero-arch .o { animation: archGlow 1.6s ease-out; }
-.hero::after { content: ''; position: absolute; left: 50%; bottom: 46px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: radial-gradient(circle, rgba(242,211,142,.6), rgba(242,211,142,0) 70%); transform: scale(0); opacity: 0; pointer-events: none; }
-.hero.lit::after { animation: bloom 1.6s ease-out; }
-@keyframes archGlow { 0% { opacity: .9; } 25% { opacity: 1; stroke-width: 3.2; filter: drop-shadow(0 0 10px rgba(242,211,142,.9)); } 100% { opacity: .9; stroke-width: 1.4; } }
-@keyframes bloom { 0% { transform: scale(0); opacity: .95; } 100% { transform: scale(55); opacity: 0; } }
-.pr.lit { animation: rowGlow 1.5s ease-out; }
-.pr.lit .pill { animation: pillPop .5s cubic-bezier(.2,1.6,.4,1); }
-@keyframes rowGlow { 0% { background: var(--gold-soft); } 100% { background: transparent; } }
-@keyframes pillPop { 0% { transform: scale(.85); } 100% { transform: none; } }
-
-/* строки намазов */
-.pr.now { background: linear-gradient(90deg, var(--gold-soft), transparent 75%); box-shadow: inset 3px 0 0 var(--gold); }
-.pill svg:first-child { flex: none; }
-.hf-a { stop-color: rgba(4,8,20,.02); } .hf-b { stop-color: rgba(4,8,20,.38); }
-:root.light .hf-a { stop-color: rgba(255,255,255,.18); } :root.light .hf-b { stop-color: rgba(255,255,255,.62); }
-.hero .btn.ghost { color: var(--hero-ink); }
 
 /* план чтения */
 .rd { display: flex; flex-direction: column; gap: 10px; text-align: left; width: 100%; }
@@ -571,3 +491,237 @@ body.rcards .qnext { padding-top: 22px; }
 :root { --arabic: 'Hafs Text', 'Amiri', 'Noto Naskh Arabic', serif; }
 .qs-ar, .qsh-ar { font-family: var(--arabic); }
 .zk-ar { line-height: 2; }
+
+/* ===== v12 «Ибада 2.0»: единая система оформления =====
+   Токены: спокойный фон без неба, сплошные поверхности, 4 радиуса (28 / 24 / 16 / 12),
+   5 размеров текста (34 заголовок экрана · 20 раздел · 16 строка · 13 подпись · 11.5 метка), один набор иконок. */
+:root, :root.lowfx {
+  --bg: #0A0E1A; --surface: #121827; --surface2: rgba(255,255,255,0.06); --seg-on: #232C42;
+  --line: rgba(255,255,255,0.07); --line2: rgba(255,255,255,0.15);
+  --glass: none; --on-sky: var(--sub);
+  --text: #F2EEE6; --sub: #9CA3B4; --muted: #6F778A;
+  --gold: #E8C374; --gold-hi: #F2D38E; --on-gold: #1A1406; --gold-soft: rgba(232,195,116,0.13); --gold-line: rgba(232,195,116,0.30);
+  --emerald: #5FD3A6; --emerald-text: #7FE0BD; --emerald-soft: rgba(95,211,166,0.14); --on-emerald: #06281B;
+  --blue: #7FA8F0; --blue-text: #A9C4F5; --blue-soft: rgba(127,168,240,0.15);
+  --amber: #F2B36A; --amber-text: #F5C08A; --amber-soft: rgba(242,179,106,0.15);
+  --rose: #F08C9B; --rose-soft: rgba(240,140,155,0.14); --red: #F08C9B; --red-text: #F4A7B2; --red-soft: rgba(240,140,155,0.14);
+  --track: rgba(255,255,255,0.09);
+  --tab-bg: rgba(20,27,43,0.94); --tab-shadow: 0 12px 30px rgba(0,0,0,0.45);
+  --sheet: #141B2C; --scrim: rgba(3,6,14,0.62);
+  --card-shadow: none; --skel-a: rgba(255,255,255,0.045); --skel-b: rgba(255,255,255,0.10);
+  --r-xl: 28px; --r-lg: 24px; --r-md: 16px; --r-sm: 12px;
+  --t-title: 34px; --t-head: 20px; --t-body: 16px; --t-meta: 13px; --t-cap: 11.5px;
+}
+:root.light, :root.lowfx.light {
+  --bg: #F3F0E9; --surface: #FFFFFF; --surface2: rgba(27,26,23,0.05); --seg-on: #FFFFFF;
+  --line: rgba(27,26,23,0.08); --line2: rgba(27,26,23,0.16);
+  --text: #1B1A17; --sub: #6A6355; --muted: #8A8273;
+  --gold: #A07526; --gold-hi: #8A5F17; --on-gold: #FFFFFF; --gold-soft: #F4E8CC; --gold-line: rgba(160,117,38,0.32);
+  --emerald: #1E8A64; --emerald-text: #0F6B4D; --emerald-soft: #DCEFE6; --on-emerald: #FFFFFF;
+  --blue: #2F6CC0; --blue-text: #1F4F91; --blue-soft: #DFE9F8;
+  --amber: #C27420; --amber-text: #8F4A0F; --amber-soft: #FBE8D3;
+  --rose: #C2475A; --rose-soft: #F8E1E4; --red: #B3261E; --red-text: #9F2219; --red-soft: #F9DEDC;
+  --track: rgba(27,26,23,0.09);
+  --tab-bg: rgba(255,255,255,0.96); --tab-shadow: 0 8px 26px rgba(60,45,20,0.14);
+  --sheet: #FFFFFF; --scrim: rgba(30,24,12,0.38);
+  --card-shadow: 0 1px 2px rgba(60,45,20,0.05); --skel-a: rgba(27,26,23,0.05); --skel-b: rgba(27,26,23,0.10);
+}
+#sky.off { display: none; }
+.screen { gap: 16px; padding-top: calc(var(--safe-top) + 14px); }
+.h1 { font-size: var(--t-title); padding: 4px 2px 0; }
+.h2 { font-family: var(--sans); font-size: var(--t-head); font-weight: 800; letter-spacing: -0.01em; line-height: 1.2; }
+.card { border-radius: var(--r-lg); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.card.list { overflow: hidden; }
+.card, .tile, .stat, .gm-cell, .z-cell, .tm, .level, .search, .seg:not(.mini), .tap { -webkit-backdrop-filter: none; backdrop-filter: none; }
+
+/* разделы и строки списка — один компонент для всех экранов */
+.sec { display: flex; flex-direction: column; gap: 10px; }
+.sec-h { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 0 4px; }
+.sec-h.in { padding: 0; }
+.sec-m { font-size: var(--t-meta); font-weight: 700; color: var(--sub); white-space: nowrap; }
+.li, .pr2 { width: 100%; min-height: 60px; padding: 10px 14px; display: flex; align-items: center; gap: 12px; background: none; border: 0; border-radius: 0; text-align: left; color: var(--text); font: inherit; }
+button.li, .pr2, .list-row { transition: background .15s ease; }
+button.li:active, .pr2:active, .list-row:active { background: var(--surface2); }
+.li-c { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.li-t { font-size: 15.5px; font-weight: 700; line-height: 1.3; display: flex; align-items: center; gap: 8px; }
+.li-m { font-size: var(--t-meta); font-weight: 600; color: var(--sub); line-height: 1.4; }
+.li-m.ok { color: var(--emerald-text); }
+.li-val { flex: none; max-width: 48%; font-size: 13.5px; font-weight: 600; color: var(--sub); text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.li-v { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.li-v b { font-size: 13px; font-weight: 800; color: var(--gold-hi); white-space: nowrap; }
+.li-v i { width: 74px; height: 5px; border-radius: 3px; background: var(--track); overflow: hidden; display: block; }
+.li-v s { display: block; height: 100%; border-radius: 3px; background: var(--gold); text-decoration: none; transition: width .3s ease; }
+.li-big { font-family: var(--serif); font-size: 30px; font-weight: 700; line-height: 1; }
+.li-tag { flex: none; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; color: var(--sub); }
+.li.col-li { flex-direction: column; align-items: stretch; gap: 8px; min-height: 0; padding: 13px 16px; }
+.li .dot { width: 10px; height: 10px; }
+.badge { font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; padding: 2px 6px; border-radius: 7px; background: var(--gold); color: var(--on-gold); }
+
+/* отметка: круг — одна форма для намазов, сунны и задач; у каждого статуса свой цвет и значок */
+.ck2 { width: 30px; height: 30px; flex: none; margin: 0 2px; border-radius: 50%; border: 1.5px solid var(--line2); background: transparent; display: flex; align-items: center; justify-content: center; color: var(--on-emerald); transition: background .2s ease, border-color .2s ease; }
+.ck2 svg { width: 16px; height: 16px; }
+.ck2.now { border: 2px solid var(--gold); }
+.ck2.st-done { background: var(--emerald); border-color: transparent; color: var(--on-emerald); }
+.ck2.st-mosque, .ck2.st-juma { background: var(--gold); border-color: transparent; color: var(--on-gold); }
+.ck2.st-jamaat { background: var(--blue); border-color: transparent; color: #0B1B3A; }
+.ck2.st-qada { background: var(--amber); border-color: transparent; color: #2A1606; }
+.ck2.st-missed { background: transparent; border-color: var(--rose); color: var(--rose); }
+:root.light .ck2.st-jamaat, :root.light .ck2.st-qada { color: #FFFFFF; }
+
+/* шапка «Сегодня» */
+.td-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 0 2px; }
+.td-date { font-size: 12.5px; font-weight: 600; color: var(--sub); }
+.td-hijri { font-size: 17px; font-weight: 800; letter-spacing: -0.01em; }
+.td-top .dnote { margin-top: 4px; }
+.td-ring { position: relative; width: 48px; height: 48px; flex: none; border: 0; padding: 0; background: none; color: var(--text); display: grid; place-items: center; }
+.td-ring svg { position: absolute; inset: 0; }
+.td-ring span { position: relative; font-size: 12px; font-weight: 800; }
+.back-day { display: flex; align-items: center; gap: 12px; padding: 12px 14px; width: 100%; text-align: left; border-color: var(--gold-line); background: var(--gold-soft); color: var(--text); }
+
+/* карточка текущего намаза — единственное место с небом */
+.hero2 { position: relative; overflow: hidden; isolation: isolate; border-radius: var(--r-xl); min-height: 300px; padding: 20px 20px 18px; display: flex; flex-direction: column; color: #FFFFFF; box-shadow: 0 16px 40px rgba(0,0,0,0.30); }
+:root.light .hero2 { box-shadow: 0 14px 34px rgba(40,60,110,0.20); }
+.hs { position: absolute; inset: 0; z-index: -1; overflow: hidden; }
+.hs-stars { position: absolute; inset: 0; } .hs-stars svg { display: block; width: 100%; height: 100%; }
+.hs-sun { position: absolute; width: 240px; height: 240px; margin: -120px 0 0 -120px; border-radius: 50%; background: radial-gradient(circle, rgba(255,242,205,0.80) 0%, rgba(255,236,180,0.34) 20%, rgba(255,236,180,0) 62%); }
+.hs-sun.low { background: radial-gradient(circle, rgba(255,214,160,0.85) 0%, rgba(255,170,110,0.38) 22%, rgba(255,160,100,0) 62%); }
+.hs-moon { position: absolute; right: 22px; top: 20px; width: 30px; height: 30px; filter: drop-shadow(0 0 10px rgba(244,231,194,.45)); }
+.hs-moon svg { display: block; }
+.hs-veil { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(5,10,28,0.10) 0%, rgba(5,10,28,0) 34%, rgba(5,10,28,0.30) 100%); }
+.h-eb { font-size: var(--t-cap); font-weight: 800; letter-spacing: .16em; text-transform: uppercase; color: rgba(255,255,255,0.80); }
+.h-name { font-family: var(--serif); font-size: 50px; font-weight: 600; line-height: 1; margin-top: 6px; text-shadow: 0 2px 18px rgba(5,10,30,.22); }
+.h-line { font-size: 15px; font-weight: 600; margin-top: 8px; color: rgba(255,255,255,0.92); }
+.h-ram { font-size: 13px; font-weight: 700; margin-top: 4px; color: #FFE7A8; }
+.h-arc { display: block; width: calc(100% + 20px); height: auto; margin: 16px -10px 0; overflow: visible; }
+.h-lbl { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin: 4px -10px 0; font-size: 11px; font-weight: 700; line-height: 1.3; text-align: center; color: rgba(255,255,255,0.82); }
+.h-lbl span { display: flex; flex-direction: column; }
+.h-lbl b { font-weight: 700; font-variant-numeric: tabular-nums; }
+.h-lbl .on, .h-lbl .on b { color: #FFFFFF; font-weight: 800; }
+.h-act { margin-top: auto; padding-top: 16px; display: flex; flex-direction: column; gap: 8px; }
+.btn.white { background: #FFFFFF; color: #12213F; box-shadow: 0 10px 24px rgba(10,20,50,0.25); }
+.btn.glass { background: rgba(255,255,255,0.16); color: #FFFFFF; border: 1px solid rgba(255,255,255,0.26); }
+.h-main { min-height: 54px; font-size: 16px; border-radius: 18px; }
+.h-chip { align-self: flex-start; max-width: 100%; min-height: 44px; padding: 0 16px 0 7px; border-radius: 22px; border: 1px solid rgba(255,255,255,0.24); background: rgba(10,18,40,0.22); color: #FFFFFF; font-size: 14px; font-weight: 800; display: inline-flex; align-items: center; gap: 10px; }
+.h-chip .ck2 { margin: 0; border-color: rgba(255,255,255,0.65); }
+.h-hint { font-size: 13px; color: rgba(255,255,255,0.82); }
+.hero2.lit::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; box-shadow: inset 0 0 0 2px rgba(255,236,180,0.9), inset 0 0 46px rgba(255,236,180,0.35); animation: litFade 1.5s ease-out forwards; }
+@keyframes litFade { from { opacity: 1; } to { opacity: 0; } }
+
+/* строки намазов */
+.pr2-i { width: 38px; height: 38px; flex: none; border-radius: 13px; background: var(--surface2); color: var(--sub); display: flex; align-items: center; justify-content: center; }
+.pr2.now { background: linear-gradient(90deg, var(--gold-soft), transparent 80%); }
+.pr2.now .pr2-i { background: var(--gold-soft); color: var(--gold); }
+.pr2.lit { animation: rowGlow 1.4s ease-out; }
+.pr2.lit .ck2 { animation: ckPop .5s cubic-bezier(.2,1.6,.4,1); }
+@keyframes rowGlow { 0% { background: var(--gold-soft); } 100% { background: transparent; } }
+@keyframes ckPop { 0% { transform: scale(.55); } 100% { transform: none; } }
+
+/* счётчик (киям, дуа после омовения) */
+.stp { display: flex; align-items: center; gap: 4px; flex: none; }
+.stp b { min-width: 26px; text-align: center; font-size: 16px; font-weight: 800; }
+.stp-b { width: 38px; height: 38px; border-radius: var(--r-sm); border: 0; background: var(--surface2); color: var(--text); display: flex; align-items: center; justify-content: center; padding: 0; }
+.stp-b.plus { background: var(--gold-soft); color: var(--gold-hi); }
+
+/* кнопки и переключатели */
+.btn { border-radius: var(--r-md); transition: transform .12s ease, filter .12s ease; }
+.btn.sm { border-radius: var(--r-sm); }
+.btn:active { transform: scale(.98); filter: brightness(.96); }
+.btn.quiet { background: none; color: var(--sub); font-size: 14px; min-height: 44px; }
+.seg { border-radius: var(--r-md); }
+.seg button { border-radius: var(--r-sm); min-height: 38px; transition: background .15s ease, color .15s ease; }
+.chip { border-color: var(--line2); background: var(--surface); }
+button.card:active, .tile:active { transform: scale(.99); }
+button.card { transition: transform .12s ease; }
+
+/* нижнее меню */
+.tabbar { padding: 0 14px calc(14px + var(--safe-bottom)); }
+.tabbar nav { height: 64px; border-radius: var(--r-lg); background: var(--tab-bg); border: 1px solid var(--line); box-shadow: var(--tab-shadow); padding: 0 4px; -webkit-backdrop-filter: blur(20px) saturate(140%); backdrop-filter: blur(20px) saturate(140%); }
+.tabbar button { font-size: 11px; gap: 4px; color: var(--muted); transition: color .15s ease; }
+:root.light .tabbar button { color: #8A8273; }
+.tabbar button svg { width: 22px; height: 22px; transition: transform .25s cubic-bezier(.2,1.4,.4,1); }
+.tabbar button[aria-current="page"] { color: var(--gold); }
+.tabbar button[aria-current="page"] svg { transform: translateY(-1px) scale(1.06); }
+.tabbar button:active svg { transform: scale(.9); }
+
+/* шторки: выезжают один раз, смахиваются вниз */
+.sheet { background: var(--sheet); border-radius: var(--r-xl); -webkit-backdrop-filter: none; backdrop-filter: none; animation: none; touch-action: pan-y; }
+.sheet.enter { animation: rise .3s cubic-bezier(.2,.9,.25,1); }
+.scrim { animation: none; }
+.scrim.enter { animation: fade .22s ease; }
+.sheet.snap { transition: transform .22s cubic-bezier(.2,.9,.25,1); }
+.sh-sec { font-size: 13px; font-weight: 800; color: var(--sub); padding: 10px 6px 2px; }
+.sheet .card.list { background: transparent; border-color: var(--line); }
+.opt { border-radius: var(--r-md); }
+.opt.on { border-color: var(--gold); background: var(--gold-soft); }
+@keyframes rise { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+/* смена экрана: содержимое мягко поднимается (только при переходе, не при каждой отметке) */
+.screen.enter:not(.reader) > * { animation: enterUp .34s cubic-bezier(.2,.8,.2,1) backwards; }
+.screen.enter:not(.reader) > :nth-child(2) { animation-delay: .03s; }
+.screen.enter:not(.reader) > :nth-child(3) { animation-delay: .06s; }
+.screen.enter:not(.reader) > :nth-child(4) { animation-delay: .09s; }
+.screen.enter:not(.reader) > :nth-child(n+5) { animation-delay: .12s; }
+@keyframes enterUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+/* заготовка при загрузке */
+.skel { display: flex; flex-direction: column; gap: 16px; }
+.skel i { display: block; border-radius: 10px; background: linear-gradient(90deg, var(--skel-a) 0%, var(--skel-b) 50%, var(--skel-a) 100%); background-size: 200% 100%; animation: shimmer 1.3s linear infinite; }
+@keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+
+/* «Прогресс» */
+.pr-sum { padding: 18px; display: flex; gap: 18px; align-items: center; }
+.pr-ring { position: relative; width: 104px; height: 104px; flex: none; }
+.pr-ring svg { position: absolute; inset: 0; }
+.pr-ring > span { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; }
+.pr-ring b { font-family: var(--serif); font-size: 34px; font-weight: 700; color: var(--gold-hi); }
+.pr-ring small { font-size: 11px; font-weight: 700; color: var(--sub); margin-top: 3px; }
+.pr-kpi { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 700; }
+.pr-kpi i { width: 8px; height: 8px; border-radius: 4px; flex: none; }
+.pr-week, .pr-month { display: flex; flex-direction: column; gap: 12px; }
+.pg { display: grid; grid-template-columns: 50px repeat(7, minmax(0, 1fr)); gap: 6px; align-items: center; }
+.pg-d { height: 28px; border: 0; padding: 0; background: none; border-radius: 8px; font-size: 11.5px; font-weight: 800; color: var(--sub); }
+.pg-d.on { color: var(--gold-hi); background: var(--gold-soft); }
+.pg-d:disabled { opacity: .6; cursor: default; }
+.pg-n { font-size: 11.5px; font-weight: 700; color: var(--sub); white-space: nowrap; }
+.pg i { height: 24px; border-radius: 8px; display: block; }
+.pg i.em { background: var(--track); }
+.pg i.fu { border: 1px dashed var(--line2); }
+.pg-leg { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 11.5px; font-weight: 700; color: var(--sub); }
+.pg-leg span { display: inline-flex; align-items: center; gap: 6px; }
+.pg-leg i { width: 10px; height: 10px; border-radius: 3px; display: block; }
+.pg-leg b { color: var(--text); }
+.pr-st { width: 44px; height: 44px; flex: none; border-radius: 14px; background: var(--gold-soft); display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; }
+.pr-st b { font-size: 17px; font-weight: 800; color: var(--gold-hi); }
+.pr-st small { font-size: 9.5px; font-weight: 700; color: var(--gold); margin-top: 2px; }
+.pr-dots { display: flex; gap: 4px; }
+.pr-dots i { flex: 1 1 0; height: 5px; border-radius: 3px; background: var(--track); }
+.pr-dots i.on { background: var(--gold); }
+.pr-read { display: flex; flex-direction: column; gap: 10px; width: 100%; text-align: left; color: var(--text); }
+.pr-read .h2 { font-size: 17px; }
+.pr-debt { display: flex; flex-direction: column; gap: 12px; }
+.pr-big { font-family: var(--serif); font-size: 36px; font-weight: 700; line-height: 1; }
+.pr-empty { padding: 20px; display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.pr-empty-g { width: 100%; opacity: .75; margin-bottom: 8px; }
+.cal-w { text-align: center; font-size: 11px; font-weight: 700; color: var(--sub); }
+.cal button { transition: transform .12s ease; }
+.cal .fu { background: transparent; border: 1px dashed var(--line2); color: var(--muted); }
+.cal .on { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text); }
+
+/* «Ещё» */
+.qibla { border-radius: var(--r-xl); height: 380px; border: 1px solid var(--line); }
+.qibla-t { position: absolute; left: 0; right: 0; top: 24px; text-align: center; font-size: var(--t-cap); font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: #C9CEDA; }
+.compass { top: 52px; }
+.cal-ev { display: flex; flex-direction: column; gap: 12px; }
+.date-t { width: 48px; height: 52px; flex: none; border-radius: 14px; background: var(--gold-soft); display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; }
+.date-t b { font-family: var(--serif); font-size: 22px; font-weight: 700; color: var(--gold-hi); }
+.date-t small { font-size: 10.5px; font-weight: 800; color: var(--gold-hi); text-transform: uppercase; margin-top: 3px; }
+.more-sj { display: flex; flex-direction: column; gap: 10px; background: linear-gradient(160deg, var(--gold-soft), transparent 70%), var(--surface); border-color: var(--gold-line); }
+.more-sj-t { font-family: var(--serif); font-size: 24px; font-weight: 600; line-height: 1.1; }
+.foot-note { text-align: center; padding: 4px; font-size: 12px; color: var(--muted); }
+.list-row { min-height: 56px; }
+.li-more { min-height: 52px; }
+.li-more .li-t { font-size: 14.5px; color: var(--gold-hi); }
+.li-chev { flex: none; width: 30px; display: flex; justify-content: center; color: var(--gold-hi); transition: transform .2s ease; }
+.li-chev.up { transform: rotate(180deg); }
+.qhero-t { font-family: var(--sans); font-size: 18px; font-weight: 800; line-height: 1.25; letter-spacing: -0.01em; }
+.gm-stage .between > .col:last-child { flex: none; text-align: right; }

@@ -209,15 +209,6 @@
     const frac = (d) => clamp((d - T.fajr) / span, 0, 1);
     return { T, now, current, phase, next, nextTime, sun: frac(now), fr: { fajr: 0, dhuhr: frac(T.dhuhr), asr: frac(T.asr), maghrib: 1 } };
   }
-  const SKY = {
-    night: 'linear-gradient(180deg,#05081A 0%,#0E1634 45%,#1B2550 100%)',
-    dawn: 'linear-gradient(180deg,#141D45 0%,#3B3F72 45%,#9B6A7E 78%,#E39B72 100%)',
-    morning: 'linear-gradient(180deg,#1C3F78 0%,#3570AE 50%,#79A8D6 100%)',
-    day: 'linear-gradient(180deg,#173A70 0%,#2E64A3 50%,#6E9CCB 100%)',
-    asr: 'linear-gradient(180deg,#131D3A 0%,#2E3B66 36%,#7D6479 66%,#D48C5C 88%,#EDB46F 100%)',
-    sunset: 'linear-gradient(180deg,#0F1433 0%,#2B2552 40%,#7A3F62 75%,#C9624F 100%)'
-  };
-
   /* ===== день: модель и кодирование ===== */
   const SUNNA_KEYS = ['fajrSunna', 'fajrAzkar', 'duha', 'dhuhrBefore', 'dhuhrAfter', 'dhuhrAzkar', 'asrAzkar', 'maghribAfter', 'maghribAzkar', 'ishaAfter', 'ishaAzkar', 'witr', 'sadaqa', 'kahf', 'ghusl'];
   const PER_PRAYER = {
@@ -626,145 +617,165 @@
     if (f && f.kind === 'rec' && !/Понедельник|Четверг/.test(f.text)) return f.text + ' · желательный пост';
     return '';
   }
-  function heroArc(sk) {
-    const P0 = [24, 104], P1 = [179, -56], P2 = [334, 104];
-    const B = (t) => [(1 - t) * (1 - t) * P0[0] + 2 * (1 - t) * t * P1[0] + t * t * P2[0], (1 - t) * (1 - t) * P0[1] + 2 * (1 - t) * t * P1[1] + t * t * P2[1]];
-    const night = sk.now < sk.T.fajr || sk.now >= sk.T.maghrib;
-    const t = sk.sun, end = B(t), q1 = [P0[0] + t * (P1[0] - P0[0]), P0[1] + t * (P1[1] - P0[1])];
-    const marks = ['fajr', 'dhuhr', 'asr', 'maghrib'].map((id) => { const p = B(sk.fr[id]); const passed = sk.now >= sk.T[id]; return '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="4.5" fill="' + (passed ? 'var(--gold-hi)' : 'none') + '" stroke="' + (passed ? 'none' : 'currentColor') + '" stroke-opacity=".8" stroke-width="1.5"/>'; }).join('');
-    const dp = B(sk.fr.dhuhr), ap = B(sk.fr.asr);
-    const lbl = (x, y, txt, anchor) => '<text x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" fill="currentColor" fill-opacity=".86" font-size="11" font-weight="700"' + (anchor ? ' text-anchor="' + anchor + '"' : '') + '>' + txt + '</text>';
-    return '<svg class="hero-arc" viewBox="0 0 358 128" aria-hidden="true" style="font-family:var(--sans)">' +
-      '<path d="M0 104H358" stroke="currentColor" stroke-opacity=".22"/>' +
-      '<path d="M24 104Q179 -56 334 104" fill="none" stroke="currentColor" stroke-opacity=".32" stroke-width="1.5" stroke-dasharray="2 5" stroke-linecap="round"/>' +
-      (night ? '' : '<path d="M24 104Q' + q1[0].toFixed(1) + ' ' + q1[1].toFixed(1) + ' ' + end[0].toFixed(1) + ' ' + end[1].toFixed(1) + '" fill="none" stroke="var(--gold-hi)" stroke-width="2.2" stroke-linecap="round"/>') +
-      marks + (night ? '' : '<circle cx="' + end[0].toFixed(1) + '" cy="' + end[1].toFixed(1) + '" r="6" fill="var(--gold-hi)" stroke="currentColor" stroke-opacity=".9" stroke-width="2"/>') +
-      lbl(24, 124, 'Фаджр ' + fmtTime(sk.T.fajr)) + lbl(dp[0], dp[1] - 12, 'Зухр ' + fmtTime(sk.T.dhuhr), 'middle') + lbl(ap[0] - 10, ap[1] - 8, 'Аср ' + fmtTime(sk.T.asr), 'end') + lbl(334, 124, 'Магриб ' + fmtTime(sk.T.maghrib), 'end') + '</svg>';
+  /* ===== Ибада 2.0: экран «Сегодня» =====
+     Три блока: карточка текущего намаза (единственное место, где есть небо), пять намазов с одной отметкой и «Сегодня ещё».
+     Подробности намаза (статус и сунна) открываются по нажатию на строку. */
+  const NM = (k, id) => (id === 'dhuhr' && isFriday(k) ? 'Джума' : PRAYERS.find((p) => p.id === id).name);
+  const NM_ACC = (k, id) => (id === 'dhuhr' && isFriday(k) ? 'Джуму' : NM(k, id)); // «Отметить Джуму»
+  const ST_SHORT = { mosque: 'в мечети', jamaat: 'джамаатом', juma: 'в мечети', done: 'совершён', qada: 'восполнен', missed: 'пропущен' };
+  const SUNNA_FULL = {
+    fajrSunna: ['Сунна до намаза', '2 ракаата'], fajrAzkar: ['Азкары после намаза', ''],
+    dhuhrBefore: ['Сунна до намаза', '4 ракаата'], dhuhrAfter: ['Сунна после намаза', '2 ракаата'], dhuhrAzkar: ['Азкары после намаза', ''],
+    asrAzkar: ['Азкары после намаза', ''], maghribAfter: ['Сунна после намаза', '2 ракаата'], maghribAzkar: ['Азкары после намаза', ''],
+    ishaAfter: ['Сунна после намаза', '2 ракаата'], ishaAzkar: ['Азкары после намаза', '']
+  };
+  function skyOpts() {
+    const h = hijri(todayKey());
+    return { lat: S.set.lat != null ? S.set.lat : 40, lng: S.set.lng != null ? S.set.lng : -new Date().getTimezoneOffset() / 4, ten: h.m === 9 && h.d >= 20, fixed: S.set.sky === 'night' || S.set.sky === 'day' ? S.set.sky : '' };
   }
-  // Главный экран построен вокруг одного действия — текущего намаза. Михраб не меняется, меняется небо за ним.
-  function vHero(k, d) {
-    const h = hijri(k), ram = h.m === 9;
-    const ARCH = 'M0 120V47C0 22 21 8 50 0C79 8 100 22 100 47V120Z';
-    const arch = '<svg class="hero-arch" viewBox="0 0 100 120" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="hfill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" class="hf-a"/><stop offset="1" class="hf-b"/></linearGradient></defs>' +
-      '<path d="' + ARCH + '" fill="url(#hfill)"/><path class="o" d="' + ARCH + '"/><path class="i" d="M3.6 120V48C3.6 25 23 12.5 50 4.6C77 12.5 96.4 25 96.4 48V120"/></svg>' +
-      '<span class="hero-fin">' + (ram ? I.finMoon : I.fin) + '</span>';
+  function heroSky() {
+    const st = window.IbadaSky && window.IbadaSky.card ? window.IbadaSky.card(skyOpts()) : null;
+    if (!st) return '<span class="hs" aria-hidden="true" style="background:linear-gradient(180deg,#0D1838 0%,#1E2A55 100%)"><span class="hs-veil"></span></span>';
+    return '<span class="hs" aria-hidden="true" style="background:linear-gradient(180deg,' + st.c[0] + ' 0%,' + st.c[1] + ' 58%,' + st.c[2] + ' 100%)">' +
+      (st.starsSvg ? '<span class="hs-stars" style="opacity:' + st.stars + '">' + st.starsSvg + '</span>' : '') +
+      (st.glow ? '<span class="hs-sun' + (st.glow.low ? ' low' : '') + '" style="left:' + (st.glow.x * 100).toFixed(1) + '%;top:' + (st.glow.y * 100).toFixed(1) + '%;opacity:' + st.glow.op.toFixed(2) + '"></span>' : '') +
+      (st.moon ? '<span class="hs-moon">' + st.moon + '</span>' : '') + '<span class="hs-veil"></span></span>';
+  }
+  // Дуга дня: пять намазов на равных местах, точка — «сейчас» между ними
+  function heroArc2(k, sk) {
+    const ids = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'], T = sk.T, now = sk.now;
+    const X0 = 14, X1 = 336, Y = (x) => 60 - 50 * Math.sin(Math.PI * (x - X0) / (X1 - X0)), mx = (i) => 35 + i * 70;
+    let nx;
+    if (now < T.fajr) nx = X0 + 8;
+    else if (now >= T.isha) nx = Math.min(X1 - 4, mx(4) + 12);
+    else { let i = 0; while (i < 3 && now >= T[ids[i + 1]]) i++; nx = mx(i) + 70 * clamp((now - T[ids[i]]) / (T[ids[i + 1]] - T[ids[i]]), 0, 1); }
+    const path = (a, b) => { let s = 'M' + a.toFixed(1) + ' ' + Y(a).toFixed(1); for (let x = a + 6; x < b; x += 6) s += 'L' + x.toFixed(1) + ' ' + Y(x).toFixed(1); return s + 'L' + b.toFixed(1) + ' ' + Y(b).toFixed(1); };
+    const marks = ids.map((id, i) => { const x = mx(i), past = now >= T[id]; return '<circle cx="' + x + '" cy="' + Y(x).toFixed(1) + '" r="4" ' + (past ? 'fill="#fff"' : 'fill="none" stroke="#fff" stroke-opacity=".8" stroke-width="1.5"') + '/>'; }).join('');
+    const night = now < T.fajr || now >= T.maghrib;
+    return '<svg class="h-arc" viewBox="0 0 350 66" aria-hidden="true"><path d="' + path(X0, X1) + '" fill="none" stroke="#fff" stroke-opacity=".36" stroke-width="1.5" stroke-dasharray="3 5" stroke-linecap="round"/>' +
+      (nx > X0 + 1 ? '<path d="' + path(X0, nx) + '" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"/>' : '') + marks +
+      '<circle cx="' + nx.toFixed(1) + '" cy="' + Y(nx).toFixed(1) + '" r="9" fill="' + (night ? 'rgba(233,236,247,.25)' : 'rgba(255,243,207,.35)') + '"/><circle cx="' + nx.toFixed(1) + '" cy="' + Y(nx).toFixed(1) + '" r="6" fill="' + (night ? '#E9ECF7' : '#FFF3CF') + '" stroke="#fff" stroke-width="2"/></svg>' +
+      '<div class="h-lbl">' + ids.map((id) => '<span' + (sk.current === id ? ' class="on"' : '') + '>' + NM(k, id) + '<b class="num">' + fmtTime(T[id]) + '</b></span>').join('') + '</div>';
+  }
+  function vHero2(k, d) {
     const sk = skyState();
     if (!sk) {
-      return '<section class="hero">' + arch + '<span class="hero-eb">Время намазов</span><span class="hero-name" style="font-size:46px">Где вы?</span><span class="hero-line">Укажите город, чтобы рассчитать время</span>' +
-        '<div class="hero-act"><button class="btn gold block" data-a="locate">' + I.pin + 'Определить автоматически</button><button class="btn ghost block" data-a="sheet" data-v="city">Выбрать город</button></div></section>';
+      return '<section class="hero2" aria-label="Время намазов">' + heroSky() + '<span class="h-eb">Время намазов</span><span class="h-name">Где вы?</span><span class="h-line">Укажите город — приложение рассчитает время намазов и киблу</span>' +
+        '<div class="h-act"><button class="btn white block" data-a="locate">' + I.pin + 'Определить автоматически</button><button class="btn glass block" data-a="sheet" data-v="city">Выбрать город</button></div></section>';
     }
-    const fri = isFriday(k), lvl = S.set.level, detailed = S.set.detailed && lvl !== 'start';
-    const nm = (id) => (id === 'dhuhr' && fri ? 'Джума' : PRAYERS.find((p) => p.id === id).name);
+    const lvl = S.set.level, detailed = S.set.detailed && lvl !== 'start';
     const cur = sk.current, curSt = cur ? d.f[cur] : null;
     const order = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'];
     const endOf = (id) => (id === 'fajr' ? sk.T.sunrise : id === 'isha' ? sk.nextTime : sk.T[order[order.indexOf(id) + 1]]);
-    const iqLine = (id) => { const q = iqamaTime(todayKey(), id, sk.T); return q && q > sk.now ? ' · икама ' + fmtTime(q) : ''; };
-    let ramLine = '';
-    if (ram) {
-      const after = sk.now >= sk.T.maghrib, T2 = after ? prayerTimes(addDays(k, 1)) : sk.T;
-      if (T2) ramLine = '<span class="hero-line2 num">Сухур до ' + fmtTime(T2.fajr) + ' · ифтар ' + fmtTime(T2.maghrib) + (after ? ' · завтра' : '') + '</span>';
-    }
-    let body;
+    const iqLine = (id) => { const q = iqamaTime(k, id, sk.T); return q && q > sk.now ? ' · икама ' + fmtTime(q) : ''; };
+    let ram = '';
+    const h = hijri(k);
+    if (h.m === 9) { const after = sk.now >= sk.T.maghrib, T2 = after ? prayerTimes(addDays(k, 1)) : sk.T; if (T2) ram = '<span class="h-ram num">Сухур до ' + fmtTime(T2.fajr) + ' · ифтар ' + fmtTime(T2.maghrib) + (after ? ' · завтра' : '') + '</span>'; }
+    let top, act;
     if (cur && !curSt) {
       const end = endOf(cur);
-      body = '<span class="hero-eb">Сейчас</span><span class="hero-name">' + nm(cur) + '</span>' +
-        '<span class="hero-line num">осталось ' + untilText(end - sk.now) + ' · до ' + fmtTime(end) + iqLine(cur) + '</span>' + ramLine + heroArc(sk) +
-        '<div class="hero-act">' + (detailed
-          ? '<button class="btn gold" data-a="sheet" data-v="status:' + cur + '">' + I.check + 'Отметить ' + (cur === 'dhuhr' && fri ? 'Джуму' : nm(cur)) + '</button>'
-          : '<button class="btn gold" data-a="quick" data-v="' + cur + '">' + I.check + 'Совершил ' + (cur === 'dhuhr' && fri ? 'Джуму' : nm(cur)) + '</button>') + '</div>';
+      top = '<span class="h-eb">Сейчас</span><span class="h-name">' + NM(k, cur) + '</span><span class="h-line num">Осталось ' + untilText(end - sk.now) + ' · до ' + fmtTime(end) + iqLine(cur) + '</span>';
+      act = '<button class="btn white block h-main" data-a="' + (detailed ? 'sheet' : 'quick') + '" data-v="' + (detailed ? 'status:' : '') + cur + '">' + I.check + 'Отметить ' + NM_ACC(k, cur) + '</button>';
     } else {
       const nx = sk.next;
-      const chip = cur && curSt ? '<button class="hero-st st-' + curSt + '" data-a="sheet" data-v="status:' + cur + '" aria-label="' + nm(cur) + ': ' + LBL[curSt] + '. Изменить">' + I.st[curSt] + nm(cur) + ' · ' + (cur === 'dhuhr' && curSt === 'juma' ? 'Джума' : LBL[curSt]) + '</button>' : '';
-      const eb = !cur && lvl !== 'start' ? 'Время духа · далее' : 'Далее';
-      body = chip + '<span class="hero-eb">' + eb + '</span><span class="hero-name">' + nm(nx.id) + '</span>' +
-        '<span class="hero-line num">через ' + untilText(sk.nextTime - sk.now) + ' · в ' + fmtTime(sk.nextTime) + iqLine(nx.id) + '</span>' + ramLine + heroArc(sk) +
-        '<div class="hero-act">' + (!cur && planFor(k).duha > 0 ? '<button class="hero-st ' + (d.s.duha ? 'st-done' : 'st-none') + '" data-a="sunna" data-v="duha" aria-pressed="' + !!d.s.duha + '">' + I.st[d.s.duha ? 'done' : 'none'] + 'Духа-намаз' + (d.s.duha ? ' · совершён' : '') + '</button>' : '') +
-        '<span class="hero-hint">' + (cur && curSt ? (curSt === 'missed' ? 'Ещё не поздно восполнить — нажмите на статус выше' : 'Альхамдулиллях') : 'Время между восходом и Зухром') + '</span></div>';
+      top = '<span class="h-eb">' + (!cur && lvl !== 'start' ? 'Время духа · далее' : 'Далее') + '</span><span class="h-name">' + NM(nx.id === 'fajr' && sk.now > sk.T.isha ? addDays(k, 1) : k, nx.id) + '</span><span class="h-line num">Через ' + untilText(sk.nextTime - sk.now) + ' · в ' + fmtTime(sk.nextTime) + iqLine(nx.id) + '</span>';
+      if (cur && curSt) act = '<button class="h-chip" data-a="sheet" data-v="status:' + cur + '" aria-label="' + NM(k, cur) + ': ' + ST_SHORT[curSt] + '. Изменить"><span class="ck2 st-' + curSt + '">' + I.st[curSt] + '</span>' + NM(k, cur) + ' · ' + ST_SHORT[curSt] + '</button>';
+      else if (!cur && planFor(k).duha > 0) act = '<button class="h-chip" data-a="sunna" data-v="duha" aria-pressed="' + !!d.s.duha + '"><span class="ck2' + (d.s.duha ? ' st-done' : '') + '">' + (d.s.duha ? I.st.done : '') + '</span>' + (d.s.duha ? 'Духа-намаз совершён' : 'Отметить духа-намаз') + '</button>';
+      else act = '<span class="h-hint">' + (cur ? '' : 'Время между восходом и Зухром') + '</span>';
     }
-    return '<section class="hero">' + arch + body + '</section>';
+    return '<section class="hero2" aria-label="Текущий намаз">' + heroSky() + top + ram + heroArc2(k, sk) + '<div class="h-act">' + act + '</div></section>';
+  }
+
+  function prRow(k, pr, d, T, sk, detailed, plan) {
+    const st = d.f[pr.id], now = !!(sk && sk.current === pr.id);
+    const name = pr.id === 'dhuhr' && isFriday(k) ? (st === 'juma' ? 'Джума' : st ? 'Зухр' : 'Зухр / Джума') : pr.name;
+    const meta = [];
+    if (T) meta.push(fmtTime(T[pr.id]));
+    if (st) meta.push(ST_SHORT[st]);
+    else if (now && T) { const order = ['fajr', 'dhuhr', 'asr', 'maghrib', 'isha'], i = order.indexOf(pr.id); const end = pr.id === 'fajr' ? T.sunrise : pr.id === 'isha' ? sk.nextTime : T[order[i + 1]]; if (end) meta.push('до ' + fmtTime(end)); }
+    else { const iq = T ? iqamaTime(k, pr.id, T) : null; meta.push(iq ? 'икама ' + fmtTime(iq) : pr.rak); }
+    const subs = detailed ? PER_PRAYER[pr.id].filter((x) => plan[x[0]] > 0) : [];
+    const subsOn = subs.filter((x) => d.s[x[0]]).length;
+    if (subsOn) meta.push('сунна ' + subsOn + ' из ' + subs.length);
+    const label = name + ': ' + (st ? ST_SHORT[st] : 'не отмечен') + (detailed ? '. Открыть' : st && st !== 'missed' ? '. Снять отметку' : '. Отметить');
+    return '<button class="pr2' + (now ? ' now' : '') + '" data-id="' + pr.id + '" data-a="' + (detailed ? 'sheet' : 'quick') + '" data-v="' + (detailed ? 'status:' : '') + pr.id + '" aria-label="' + label + '">' +
+      '<span class="pr2-i">' + I.g[pr.id] + '</span><span class="li-c"><span class="li-t">' + name + (now ? '<span class="badge">сейчас</span>' : '') + '</span><span class="li-m num">' + meta.join(' · ') + '</span></span>' +
+      '<span class="ck2' + (st ? ' st-' + st : now ? ' now' : '') + '">' + (st ? I.st[st] : '') + '</span></button>';
+  }
+
+  function vTodayMore(k, d, plan, lvl, isToday) {
+    const rows = []; let n = 0, done = 0;
+    // порядок по времени суток: утром выше духа, ночью — витр и киям
+    const sk = isToday ? skyState() : null, morning = !!(sk && !sk.current && sk.now >= sk.T.sunrise), night = !!(sk && (sk.now >= sk.T.isha || sk.now < sk.T.fajr));
+    const add = (pr, html) => rows.push([pr, rows.length, html]);
+    const ck = (on, cls) => '<span class="ck2' + (on ? ' st-done' : cls ? ' ' + cls : '') + '">' + (on ? I.st.done : '') + '</span>';
+    const item = (act, val, t, m, right, extra) => '<button class="li" data-a="' + act + '"' + (val !== '' ? ' data-v="' + val + '"' : '') + (extra || '') + '><span class="li-c"><span class="li-t">' + t + '</span>' + (m ? '<span class="li-m">' + m + '</span>' : '') + '</span>' + right + '</button>';
+    const meter = (v, frac) => '<span class="li-v"><b class="num">' + v + '</b><i><s style="width:' + Math.round(clamp(frac, 0, 1) * 100) + '%"></s></i></span>';
+    const check = (pr, key, t, m) => { if (!(plan[key] > 0)) return; const on = !!d.s[key]; n++; if (on) done++; add(pr, item('sunna', key, t, m, ck(on), ' aria-pressed="' + on + '"')); };
+    if (lvl !== 'start') {
+      const which = defaultAzTab(), list = D.AZKAR[which], cnt = which === 'morning' ? d.am : d.ae;
+      const got = list.filter((a, i) => (cnt[i] || 0) >= a.n).length, all = got === list.length;
+      n++; if (all) done++;
+      add(10, item('zikr', 'azkar', (which === 'morning' ? 'Утренние' : 'Вечерние') + ' азкары', (which === 'morning' ? 'После Фаджра' : 'После Асра, до Магриба') + (all ? ' · прочитаны' : ''), all ? ck(true) : meter(got + ' из ' + list.length, got / list.length)));
+    }
+    const st = isToday ? rState() : null;
+    if (st && !st.done) {
+      const R = st.R, day = tfToday(st), ok = !st.before && st.left === 0;
+      let m;
+      if (st.before) m = 'Начало ' + fmtDate(R.start) + ' · ' + st.base + ' стр. в день';
+      else if (ok) m = 'Норма выполнена · можно читать дальше';
+      else m = (day && day.to >= 0 ? ayRange(day.from, day.to) + ' · около ' + readMins(day.from, day.to) + ' мин' : rRange(R, st.pos + 1, st.posStart + st.norm));
+      n++; if (ok) done++;
+      add(20, item(isSaadi(R) && !st.before ? 'readOpen' : 'sheet', isSaadi(R) && !st.before ? '' : 'read', esc(R.title), m, ok ? ck(true) : st.before ? '<span class="li-v"><b class="num">' + st.base + ' стр.</b></span>' : meter(st.readToday + ' из ' + st.norm + ' стр.', st.readToday / Math.max(1, st.norm))));
+    }
+    check(30, 'kahf', 'Сура аль-Кахф', 'Сунна пятницы');
+    check(31, 'ghusl', 'Гусль', 'Перед пятничным намазом');
+    check(morning ? 25 : 40, 'duha', 'Духа-намаз', 'После восхода, до Зухра');
+    check(night ? 22 : 50, 'witr', 'Витр-намаз', 'После Иша, до рассвета');
+    [['qiyam', 'Киям аль-лейль', 'ракаатов', 2, 20], ['wudu', 'Дуа после омовения', 'раз', 1, 10]].forEach((x) => {
+      const goal = plan[x[0]]; if (!(goal > 0)) return;
+      const v = x[0] === 'qiyam' ? d.q : d.w, ok = v >= goal; n++; if (ok) done++;
+      add(x[0] === 'qiyam' ? (night ? 23 : 55) : 65, '<div class="li"><span class="li-c"><span class="li-t">' + x[1] + '</span><span class="li-m num' + (ok ? ' ok' : '') + '">' + v + ' из ' + goal + ' ' + x[2] + '</span></span><span class="stp"><button class="stp-b" data-a="step" data-v="' + x[0] + ':-' + x[3] + ':' + x[4] + '" aria-label="' + x[1] + ': убавить">' + I.minus + '</button><b class="num">' + v + '</b><button class="stp-b plus" data-a="step" data-v="' + x[0] + ':' + x[3] + ':' + x[4] + '" aria-label="' + x[1] + ': добавить">' + I.plus + '</button></span></div>');
+    });
+    check(60, 'sadaqa', 'Садака', 'Любое доброе пожертвование');
+    if (lvl === 'ihsan') {
+      const fi = fastingInfo(k);
+      if ((fi && fi.kind !== 'forbidden') || d.p) {
+        const lab = { fast: 'Постился', qada: 'Каза поста', missed: 'Пост пропущен' }[d.p];
+        const on = d.p === 'fast' || d.p === 'qada';
+        add(15, item('sheet', 'fast', 'Пост', lab ? lab + (fi ? ' · ' + fi.text.toLowerCase() : '') : fi.text + (fi.kind === 'rec' ? ' · желательный пост' : ''), d.p === 'missed' ? '<span class="ck2 st-missed">' + I.st.missed + '</span>' : ck(on)));
+      }
+    }
+    if (lvl !== 'start') {
+      const z = d.z || [], total = z.reduce((a, b) => a + (b || 0), 0);
+      const frac = D.ZIKRS.reduce((a, x, i) => a + Math.min(z[i] || 0, 100), 0) / (D.ZIKRS.length * 100);
+      add(35, item('zikr', 'tasbih', 'Зикры', 'Тасбих · по 100 каждого', meter(total + ' ' + plural(total, 'зикр', 'зикра', 'зикров'), frac)));
+    }
+    if (lvl === 'ihsan') {
+      const DT = { n: ['Обычный', 'var(--emerald)', 'Нажмите, если вы в пути или болеете'], t: ['В пути', 'var(--blue)', 'Сунна, кроме главной, не снижает итог'], s: ['Болезнь', 'var(--violet-text)', 'Учитываются фард, азкары и зикры'] }[d.t] || ['Обычный', 'var(--emerald)', ''];
+      add(90, item('cycleDay', '', 'Тип дня', DT[2], '<span class="li-tag"><span class="dot" style="background:' + DT[1] + '"></span>' + DT[0] + '</span>', ' aria-label="Тип дня: ' + DT[0] + '. Нажмите, чтобы сменить"'));
+    }
+    if (!rows.length) return '';
+    rows.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const html = rows.map((r) => r[2]);
+    const LIM = 5, open = S.set.todayAll || rows.length <= LIM + 1;
+    const shown = open ? html : html.slice(0, LIM);
+    if (rows.length > LIM + 1) shown.push('<button class="li li-more" data-a="todayAll" aria-expanded="' + open + '"><span class="li-c"><span class="li-t">' + (open ? 'Свернуть' : 'Ещё ' + (rows.length - LIM) + ' ' + plural(rows.length - LIM, 'пункт', 'пункта', 'пунктов')) + '</span></span><span class="li-chev' + (open ? ' up' : '') + '">' + I.down + '</span></button>');
+    return '<section class="sec" aria-label="Сегодня ещё"><div class="sec-h"><h2 class="h2">' + (isToday ? 'Сегодня ещё' : 'В этот день') + '</h2>' + (n ? '<span class="sec-m num">' + done + ' из ' + n + '</span>' : '') + '</div><div class="card list">' + shown.join('') + '</div></section>';
   }
 
   function vHome() {
     const k = viewKey(), today = todayKey(), isToday = k === today, d = getDay(k), lvl = S.set.level;
-    const sc = scores(k) || { fard: 0, sunna: null, azkar: lvl === 'start' ? null : 0, zikr: 0, overall: 0 };
-    const T = prayerTimes(k), sk = isToday ? skyState() : null;
-    const plan = planFor(k);
-    const DT = { n: ['Обычный день', 'var(--emerald)'], t: ['В пути', 'var(--blue)'], s: ['Болезнь', 'var(--violet-text)'] };
-    const parts = [];
-    const p = parseKey(k);
-    parts.push('<div class="top"><div class="col"><div class="small sub" style="font-weight:600;font-size:13px">' + WD_FULL[weekday(k)] + ', ' + fmtDate(k) + (isToday ? '' : ' ' + p.y) + ' · ' + hijri(k).y + ' г. х.</div><div class="date-hijri">' + hijriShort(k) + '</div>' + (dayNote(k) ? '<div class="dnote">' + I.spark + esc(dayNote(k)) + '</div>' : '') + '</div>' +
-      (lvl === 'ihsan' ? '<button class="daytype" data-a="cycleDay" aria-label="Тип дня: ' + DT[d.t][0] + '. Нажмите, чтобы сменить" style="color:' + DT[d.t][1] + '"><span class="dot" style="background:' + DT[d.t][1] + '"></span>' + DT[d.t][0] + '</button>' : '') + '</div>');
-    if (lvl === 'ihsan' && d.t !== 'n') parts.push('<div class="small sub" style="padding:0 4px;line-height:1.45">' + (d.t === 't' ? 'В пути: сунна до Фаджра, витр, азкары, дуа после омовения и садака. Остальная сунна не снижает итог.' : 'Болезнь: учитываются только фард, азкары и зикры. Сунна не снижает итог.') + '</div>');
-    if (!isToday) parts.push('<button class="card pad between" data-a="backToday" style="text-align:left;width:100%"><span class="col"><span style="font-weight:800">Вы отмечаете ' + fmtDate(k) + '</span><span class="small sub">Нажмите, чтобы вернуться к сегодняшнему дню</span></span>' + I.chev + '</button>');
-    if (isToday) parts.push(vHero(k, d));
-
-    const summaryBits = ['Фард ' + fardDoneCount(d) + ' из 5'];
-    if (sc.sunna !== null && lvl !== 'start') summaryBits.push('сунна ' + pct(sc.sunna));
-    if (lvl !== 'start') summaryBits.push('азкары ' + ((azDone(d, 'morning') ? 1 : 0) + (azDone(d, 'evening') ? 1 : 0)) + ' из 2');
-    parts.push('<button class="card summary" data-a="tab" data-v="progress"><span class="ring" style="width:64px;height:64px">' + ring(sc.overall, 64, 26, 6) + '<span class="num" style="font-size:15px">' + pct(sc.overall) + '</span></span><span class="col grow" style="gap:3px"><span style="font-size:16px;font-weight:800">Итог дня</span><span class="small sub" style="font-size:13px;line-height:1.4">' + summaryBits.join(' · ') + '</span></span>' + I.chev + '</button>');
-
-    if (gamOn() && isToday && S.loaded) parts.push(vGoalCard(true));
-    if (isToday && S.loaded && S.set.level) parts.push(vReadCard());
-
-    // намазы
+    const sc = scores(k), T = prayerTimes(k), sk = isToday ? skyState() : null, plan = planFor(k);
+    const parts = [], p = parseKey(k), v = sc ? Math.min(sc.overall, 1) : 0;
+    const note = dayNote(k);
+    parts.push('<header class="td-top"><div class="col"><span class="td-date">' + WD_FULL[weekday(k)] + ', ' + fmtDate(k) + (isToday ? '' : ' ' + p.y) + (S.set.city ? ' · ' + esc(S.set.city) : '') + '</span><span class="td-hijri">' + hijriText(k) + '</span>' + (note ? '<span class="dnote">' + I.spark + esc(note) + '</span>' : '') + '</div>' +
+      '<button class="td-ring" data-a="tab" data-v="progress" aria-label="Итог дня: ' + Math.round(v * 100) + '%. Открыть прогресс">' + ring(v, 48, 20, 4.5) + '<span class="num">' + Math.round(v * 100) + '%</span></button></header>');
+    if (!isToday) parts.push('<button class="card back-day" data-a="backToday"><span class="li-c"><span class="li-t">Вы отмечаете ' + fmtDate(k) + '</span><span class="li-m">Нажмите, чтобы вернуться к сегодняшнему дню</span></span>' + I.chev + '</button>');
+    if (isToday) parts.push(vHero2(k, d));
     const detailed = S.set.detailed && lvl !== 'start';
-    parts.push('<div class="between" style="padding:8px 4px 0"><h2 class="h2">Намазы</h2>' + (lvl !== 'start' ? '<div class="seg mini" role="group" aria-label="Режим отметки"><button class="' + (detailed ? 'on' : '') + '" data-a="mode" data-v="1" aria-pressed="' + detailed + '">Подробно</button><button class="' + (!detailed ? 'on' : '') + '" data-a="mode" data-v="0" aria-pressed="' + !detailed + '">Просто</button></div>' : '') + '</div>');
-    const rows = PRAYERS.map((pr) => {
-      const st = d.f[pr.id];
-      const now = sk && sk.current === pr.id;
-      const label = st ? (pr.id === 'dhuhr' && st === 'juma' ? 'Джума' : LBL[st]) : 'Отметить';
-      const name = pr.id === 'dhuhr' && isFriday(k) ? 'Зухр / Джума' : pr.name;
-      let right;
-      if (detailed) right = '<button class="pill st-' + (st || 'none') + '" data-a="sheet" data-v="status:' + pr.id + '" aria-label="' + name + ': ' + label + '. Изменить">' + I.st[st || 'none'] + label + I.down + '</button>';
-      else { const on = !!st && st !== 'missed'; right = '<button class="check' + (on ? ' on' : '') + '" data-a="quick" data-v="' + pr.id + '" aria-pressed="' + on + '" aria-label="' + name + (on ? ': отмечен' : ': отметить') + '">' + I.check + '</button>'; }
-      const subs = detailed ? PER_PRAYER[pr.id].filter((x) => plan[x[0]] > 0) : [];
-      const subsHtml = subs.length ? '<div class="subs">' + subs.map((x) => { const on = !!d.s[x[0]]; return '<button class="sub-chip' + (on ? ' on' : '') + '" data-a="sunna" data-v="' + x[0] + '" aria-pressed="' + on + '">' + (on ? I.checkSm : '') + x[1] + '</button>'; }).join('') + '</div>' : '';
-      return '<div class="pr' + (now ? ' now' : '') + '" data-id="' + pr.id + '"><div class="row"><span class="glyph">' + I.g[pr.id] + '</span><span class="col grow"><span class="row" style="gap:8px"><span class="pr-name">' + name + '</span>' + (now ? '<span class="badge">СЕЙЧАС</span>' : '') + '</span><span class="small sub num" style="font-size:13px">' + timeLine(k, pr, T) + '</span></span>' + right + '</div>' + subsHtml + '</div>';
-    });
-    parts.push('<div class="card list" style="overflow:hidden">' + rows.join('') + '</div>');
-
-    // дополнительная сунна
-    if (lvl === 'ihsan') {
-      const tg2 = [['duha', 'Духа-намаз', 'После восхода, до Зухра'], ['witr', 'Витр-намаз', 'После Иша, до рассвета'], ['sadaqa', 'Садака', 'Любое доброе пожертвование'], ['kahf', 'Сура аль-Кахф', 'Пятница'], ['ghusl', 'Гусль', 'Пятница']].filter((x) => plan[x[0]] > 0);
-      const stp = [['qiyam', 'Киям аль-лейль', 'ракаатов', 2, 20], ['wudu', 'Дуа после омовения', 'раз', 1, 10]].filter((x) => plan[x[0]] > 0);
-      if (tg2.length || stp.length) {
-        parts.push('<div class="between" style="padding:8px 4px 0"><h2 class="h2">Дополнительно</h2><span class="small sub">сунна ' + pct(sc.sunna) + '</span></div>');
-        parts.push('<div class="card list">' +
-          tg2.map((x) => { const on = !!d.s[x[0]]; return '<div class="x-row"><span class="col grow"><span style="font-size:15px;font-weight:700">' + x[1] + '</span><span class="small sub">' + x[2] + '</span></span><button class="check' + (on ? ' on' : '') + '" data-a="sunna" data-v="' + x[0] + '" aria-pressed="' + on + '" aria-label="' + x[1] + '">' + I.check + '</button></div>'; }).join('') +
-          stp.map((x) => { const v = x[0] === 'qiyam' ? d.q : d.w, goal = plan[x[0]]; return '<div class="x-row"><span class="col grow"><span style="font-size:15px;font-weight:700">' + x[1] + '</span><span class="small num" style="color:' + (v >= goal ? 'var(--emerald-text)' : 'var(--sub)') + '">' + v + ' из ' + goal + ' ' + x[2] + '</span></span><span class="stepper"><button class="step" data-a="step" data-v="' + x[0] + ':-' + x[3] + ':' + x[4] + '" aria-label="' + x[1] + ': убавить">' + I.minus + '</button><span class="num" style="min-width:26px;text-align:center;font-weight:800;font-size:17px">' + v + '</span><button class="step plus" data-a="step" data-v="' + x[0] + ':' + x[3] + ':' + x[4] + '" aria-label="' + x[1] + ': добавить">' + I.plus + '</button></span></div>'; }).join('') +
-          '</div>');
-      }
-    }
-
-    // плитки
-    const tile = (act, val, ico, title, sub, extra) => '<button class="tile" data-a="' + act + '" data-v="' + val + '"' + (extra || '') + '>' + ico + '<span class="col"><span class="tile-title">' + title + '</span><span class="small sub">' + sub + '</span></span></button>';
-    const zTotal = (d.z || []).reduce((a, b) => a + b, 0);
-    const which = defaultAzTab();
-    const azList = D.AZKAR[which], azCounts = which === 'morning' ? d.am : d.ae;
-    const azDoneN = azList.filter((a, i) => (azCounts[i] || 0) >= a.n).length;
-    const nf = nextFasting(today), tf = fastingInfo(k);
-    let bento = '<div class="bento" style="padding-top:4px">' +
-      tile('tab', 'more', '<svg width="40" height="40" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="20" r="18" stroke="var(--line2)" stroke-width="1.5"/><path d="M20 6l4 14-4 14-4-14z" fill="var(--gold)"/><path d="M20 20h4l-4 14-4-14z" fill="var(--sub)" opacity=".5"/><rect x="17" y="1" width="6" height="6" rx="1" fill="var(--text)"/></svg>', 'Кибла', S.set.lat != null ? Math.round(qiblaBearing()) + '° от севера' : 'Найти направление') +
-      tile('zikr', 'tasbih', '<svg width="40" height="40" viewBox="0 0 40 40" fill="none" aria-hidden="true"><circle cx="20" cy="18" r="13" stroke="var(--gold)" stroke-width="5" stroke-dasharray="0.1 6.7" stroke-linecap="round"/><path d="M20 31v7" stroke="var(--gold)" stroke-width="2" stroke-linecap="round"/></svg>', 'Тасбих', zTotal + ' ' + plural(zTotal, 'зикр', 'зикра', 'зикров') + ' за день');
-    if (lvl !== 'start') bento += '<button class="tile wide" data-a="zikr" data-v="azkar"><span class="arch-ico">' + I.moon + '</span><span class="col grow" style="gap:6px"><span class="between" style="align-items:baseline"><span class="tile-title">' + (which === 'morning' ? 'Утренние' : 'Вечерние') + ' азкары</span><span class="small sub num">' + azDoneN + ' из ' + azList.length + '</span></span><span class="small sub">' + (which === 'morning' ? 'Читаются после Фаджра' : 'Читаются после Асра, до Магриба') + '</span><span class="bar"><span style="width:' + Math.round(azDoneN / azList.length * 100) + '%"></span></span></span></button>';
-    const ql = S.set.qlast;
-    bento += tile('tab', 'quran', '<svg width="40" height="40" viewBox="0 0 40 40" fill="none" aria-hidden="true"><path d="M20 11c-3.3-2.5-8.3-3.3-13.3-2.5v21.7c5-.8 10 0 13.3 2.5 3.3-2.5 8.3-3.3 13.3-2.5V8.5c-5-.8-10 0-13.3 2.5z" stroke="var(--gold)" stroke-width="1.8" stroke-linejoin="round"/><path d="M20 11v21.7" stroke="var(--gold)" stroke-width="1.8"/></svg>', 'Коран', ql ? 'Продолжить: ' + D.SURAH_RU[ql.s - 1] : (isFriday(today) ? 'Пятница — сура аль-Кахф' : 'Начать чтение'));
-    if (lvl === 'ihsan') {
-      const fastLabel = { fast: 'Постился', qada: 'Каза поста', missed: 'Пропущен' }[d.p];
-      if (tf || d.p) bento += '<button class="tile" data-a="sheet" data-v="fast"><span class="tag' + (tf && tf.kind === 'forbidden' ? '' : ' gold') + '">ПОСТ</span><span class="col"><span class="tile-title">' + (fastLabel || (tf ? tf.text : 'Отметить пост')) + '</span><span class="small sub">' + (fastLabel ? 'Нажмите, чтобы изменить' : (tf && tf.kind !== 'forbidden' ? 'Отметьте, если постились' : '')) + '</span></span></button>';
-      else bento += '<button class="tile" data-a="sheet" data-v="fast"><span class="tag">ПОСТ</span><span class="col"><span class="tile-title">' + (nf ? WD_SHORT[weekday(nf.key)] + ', ' + fmtDate(nf.key) : 'Пост') + '</span><span class="small sub">' + (nf ? nf.info.text + ' · желательный' : 'Отметить пост') + '</span></span></button>';
-    } else {
-      bento += tile('zikr', 'dua', '<svg width="40" height="40" viewBox="0 0 40 40" fill="none" stroke="var(--gold)" stroke-width="1.3" aria-hidden="true"><rect x="10" y="10" width="20" height="20"/><rect x="10" y="10" width="20" height="20" transform="rotate(45 20 20)"/></svg>', 'Дуа', 'На каждый случай');
-    }
-    bento += '</div>';
-    parts.push(bento);
-
-    if (lvl === 'ihsan') {
-      const debt = qadaDebt();
-      parts.push('<div class="card pad" style="display:flex;flex-direction:column;gap:12px"><div class="between"><span class="col"><span style="font-size:16px;font-weight:800">Каза-долг</span><span class="small sub" style="font-size:13px">Пропущенные фард-намазы</span></span><span class="num" style="font-family:var(--serif);font-size:36px;font-weight:700;color:' + (debt ? 'var(--amber-text)' : 'var(--emerald-text)') + '">' + debt + '</span></div>' +
-        '<div class="small sub" style="font-size:13.5px;line-height:1.5">' + (debt ? 'Совершили намаз-каза? Отметьте — долг уменьшится. Пропуски за прошлые годы можно указать в настройках.' : 'Долга нет, альхамдулиллях. Если есть пропуски за прошлые годы, укажите их — приложение будет вести учёт.') + '</div>' +
-        '<div class="row" style="gap:8px">' + (debt ? '<button class="btn gold sm grow" data-a="qadaDone">Восполнил 1 намаз</button>' : '') + '<button class="btn ghost sm grow" data-a="sheet" data-v="qada">Долг за прошлые годы</button></div></div>');
-    }
+    parts.push('<section class="sec" aria-label="Намазы"><div class="sec-h"><h2 class="h2">Намазы</h2><span class="sec-m num">' + fardDoneCount(d) + ' из 5</span></div><div class="card list">' + PRAYERS.map((pr) => prRow(k, pr, d, T, sk, detailed, plan)).join('') + '</div></section>');
+    parts.push(vTodayMore(k, d, plan, lvl, isToday));
     return parts.join('');
   }
 
@@ -872,7 +883,7 @@
       const title = st.before ? 'План начнётся ' + fmtDate(tp.P.start) : ok ? 'Норма на сегодня выполнена' : tp.cur >= 0 ? 'Продолжить с ' + D.SURAH_RU[nx[0] - 1] + ', ' + nx[1] : 'Начать с суры «Аль-Фатиха»';
       const sub = st.before ? 'Первая норма — ' + st.base + ' стр.' : ok ? 'МашаАллах. Можно читать дальше — завтра будет меньше' : tx ? 'Сегодня до ' + (tx[0] === nx[0] ? 'аята ' + tx[1] : ayName(to)) + ' · около ' + readMins(next, to) + ' мин' : '';
       const ring = st.before ? ringSvg(76, 0, false, '<b>' + st.base + '</b><small>стр. в день</small>') : ok ? ringSvg(76, 1, true, I.check) : ringSvg(76, st.readToday / Math.max(1, st.norm), false, '<b>' + st.readToday + '</b><small>из ' + st.norm + ' стр.</small>');
-      out.push('<div class="card pad qhero"><div class="row" style="gap:14px;align-items:center">' + ring + '<span class="col grow" style="gap:5px;min-width:0"><span class="eyebrow" style="padding:0">Тафсир ас-Саади · день ' + clamp(st.di, 1, tp.P.days) + ' из ' + tp.P.days + '</span><span class="qhero-t">' + title + '</span>' + (sub ? '<span class="small sub">' + sub + '</span>' : '') + '</span></div>' +
+      out.push('<div class="card pad qhero"><div class="row" style="gap:14px;align-items:center">' + ring + '<span class="col grow" style="gap:5px;min-width:0"><span class="eyebrow" style="padding:0">Тафсир · день ' + clamp(st.di, 1, tp.P.days) + ' из ' + tp.P.days + '</span><span class="qhero-t">' + title + '</span>' + (sub ? '<span class="small sub">' + sub + '</span>' : '') + '</span></div>' +
         (st.before ? '' : '<button class="btn gold block" data-a="readOpen">' + READ_ICON + (ok ? 'Читать дальше' : 'Читать тафсир') + '</button>') + '</div>');
     } else if (!S.read && S.set.readOffer !== 'no' && sai()) {
       out.push('<button class="card pad tf-cont" data-a="sheet" data-v="read"><span class="rd-ico">' + READ_ICON + '</span><span class="col grow" style="gap:3px"><span style="font-size:15px;font-weight:800">Тафсир ас-Саади по плану</span><span class="small sub">Поставьте цель — приложение поведёт по аятам и посчитает страницы</span></span>' + I.chev + '</button>');
@@ -1187,63 +1198,124 @@
 
   function weekKeys() { const t = todayKey(); const wd = (weekday(t) + 6) % 7; const mon = addDays(t, -wd); return [0, 1, 2, 3, 4, 5, 6].map((i) => addDays(mon, i)); }
   function monthKeys() { const p = parseKey(todayKey()); const n = new Date(p.y, p.m, 0).getDate(); const out = []; for (let d = 1; d <= n; d++) out.push(keyOf(p.y, p.m, d)); return out; }
+  /* ===== Ибада 2.0: «Прогресс» =====
+     Неделя: итог с кольцом, сетка «день × намаз», цель недели, постоянство, план чтения, каза и посты.
+     Пустые недели показываются как спокойная заготовка, а не нули. */
+  const ST_COLOR = { mosque: 'var(--gold)', juma: 'var(--gold)', jamaat: 'var(--blue)', done: 'var(--emerald)', qada: 'var(--amber)', missed: 'var(--rose)' };
+  function dueCount(k) { // сколько фард-намазов этого дня уже наступило
+    const t = todayKey();
+    if (k < t) return 5;
+    if (k > t) return 0;
+    const T = prayerTimes(k), now = new Date();
+    return T ? PRAYERS.filter((p) => T[p.id] <= now).length : fardDoneCount(getDay(k));
+  }
+  const avgOf = (keys, f) => { const v = keys.map((k) => scores(k)).filter(Boolean).map(f).filter((x) => x !== null && x !== undefined); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+  const firstMark = () => Object.keys(S.days).filter((k) => !isEmptyDay(S.days[k])).sort()[0] || '';
+  function vPrGrid(keys, today) {
+    const head = '<span></span>' + keys.map((k) => '<button class="pg-d' + (k === today ? ' on' : '') + '" data-a="' + (k <= today ? 'openDay' : '') + '" data-v="' + k + '"' + (k > today ? ' disabled' : '') + ' aria-label="' + WD_FULL[weekday(k)] + ', ' + fmtDate(k) + (k <= today ? ': открыть день' : '') + '">' + WD_SHORT[weekday(k)] + '</button>').join('');
+    const T = prayerTimes(today), now = new Date();
+    const rows = PRAYERS.map((pr) => '<span class="pg-n">' + pr.name + '</span>' + keys.map((k) => {
+      const st = S.days[k] && S.days[k].f[pr.id], later = k > today || (k === today && T && T[pr.id] > now);
+      return '<i class="' + (st ? 'st' : later ? 'fu' : 'em') + '"' + (st ? ' style="background:' + ST_COLOR[st] + '"' : '') + '></i>';
+    }).join('')).join('');
+    return '<div class="pg" role="img" aria-label="Сетка намазов по дням недели">' + head + rows + '</div>';
+  }
   function vProgress() {
-    const P = S.prog, isWeek = P.period === 'week', today = todayKey();
-    const keys = isWeek ? weekKeys() : monthKeys();
-    const past = keys.filter((k) => k <= today);
-    const sc = past.map((k) => scores(k)).filter(Boolean);
-    const avg = (f) => { const v = sc.map(f).filter((x) => x !== null && x !== undefined); return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null; };
+    const P = S.prog, today = todayKey(), lvl = S.set.level;
     if (P.period === 'path' && !gamOn()) P.period = 'week';
     const out = ['<h1 class="h1">Прогресс</h1>',
-      '<div class="seg" role="group" aria-label="Период">' + [['week', 'Неделя'], ['month', 'Месяц']].concat(gamOn() ? [['path', 'Путь']] : []).map((x) => '<button class="' + (P.period === x[0] ? 'on' : '') + '" data-a="period" data-v="' + x[0] + '">' + x[1] + '</button>').join('') + '</div>'];
+      '<div class="seg" role="group" aria-label="Период">' + [['week', 'Неделя'], ['month', 'Месяц']].concat(gamOn() ? [['path', 'Путь']] : []).map((x) => '<button class="' + (P.period === x[0] ? 'on' : '') + '" data-a="period" data-v="' + x[0] + '" aria-pressed="' + (P.period === x[0]) + '">' + x[1] + '</button>').join('') + '</div>'];
     if (P.period === 'path') return out.join('') + vPath();
-    const selKey = isWeek ? (P.bar != null ? keys[P.bar] : today) : (P.day || today);
-    const selSc = scores(selKey);
+    if (P.period === 'month') return out.join('') + vProgMonth();
+    const keys = weekKeys(), past = keys.filter((k) => k <= today), first = firstMark();
+    const marked = past.filter((k) => S.days[k] && !isEmptyDay(S.days[k]));
     const k0 = parseKey(keys[0]), k6 = parseKey(keys[6]);
-    const range = isWeek ? (k0.m === k6.m ? k0.d + '–' + k6.d + ' ' + MONTHS_GEN[k0.m - 1] : fmtDate(keys[0]) + ' — ' + fmtDate(keys[6])) : MONTHS_NOM[parseKey(today).m - 1];
-    let chart = '';
-    if (isWeek) {
-      chart = '<div style="display:flex;flex-direction:column;gap:8px"><div class="bars">' + keys.map((k, i) => { const s = scores(k), v = s ? Math.min(s.overall, 1) : 0, on = k === selKey; return '<button class="' + (on ? 'on' : '') + '" data-a="bar" data-v="' + i + '" aria-label="' + WD_SHORT[weekday(k)] + ', ' + fmtDate(k) + ': ' + (k > today ? 'ещё впереди' : pct(s ? s.overall : null)) + '"><span class="trk"><span class="fill" style="height:' + Math.round(v * 100) + '%"></span></span></button>'; }).join('') + '</div><div style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px">' + keys.map((k) => '<span style="text-align:center;font-size:12px;font-weight:' + (k === selKey ? 800 : 600) + ';color:' + (k === selKey ? 'var(--text)' : 'var(--sub)') + '">' + WD_SHORT[weekday(k)] + '</span>').join('') + '</div></div>';
-    } else {
-      const lead = (weekday(keys[0]) + 6) % 7;
-      let cells = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((w) => '<span style="text-align:center;font-size:11px;font-weight:700;color:var(--sub)">' + w + '</span>').join('');
-      for (let i = 0; i < lead; i++) cells += '<span></span>';
-      keys.forEach((k) => { const s = scores(k), v = s ? s.overall : null; const cls = v === null ? 'h0' : v >= 0.9 ? 'h4c' : v >= 0.75 ? 'h3c' : v >= 0.6 ? 'h2c' : 'h1c'; cells += '<button class="' + cls + (k === selKey ? ' on' : '') + ' num" data-a="calDay" data-v="' + k + '" aria-label="' + fmtDate(k) + ': ' + (k > today ? 'ещё впереди' : pct(v)) + '" style="' + (k === today ? 'font-weight:800' : '') + '">' + parseKey(k).d + '</button>'; });
-      chart = '<div style="display:flex;flex-direction:column;gap:10px"><div class="cal">' + cells + '</div><div class="row" style="flex-wrap:wrap;gap:6px 14px">' + [['h1c', 'ниже 60%'], ['h2c', '60–74%'], ['h3c', '75–89%'], ['h4c', '90%+']].map((l) => '<span class="row small sub" style="gap:6px"><span class="' + l[0] + '" style="width:12px;height:12px;border-radius:4px;display:block"></span>' + l[1] + '</span>').join('') + '</div></div>';
+    const range = k0.m === k6.m ? k0.d + '–' + k6.d + ' ' + MONTHS_GEN[k0.m - 1] : fmtDate(keys[0]) + ' — ' + fmtDate(keys[6]);
+    // итог недели
+    let due = 0, onTime = 0;
+    past.forEach((k) => { due += dueCount(k); const d = S.days[k]; if (d) PRAYERS.forEach((p) => { if (ON_TIME[d.f[p.id]]) onTime++; }); });
+    if (!first) {
+      out.push('<div class="card pr-empty"><div class="pr-empty-g">' + vPrGrid(keys, today) + '</div><span class="li-t">Ваша первая неделя</span><span class="li-m">Отмечайте намазы на экране «Сегодня» — здесь появится картина недели: какие намазы в мечети, какие джамаатом, какие вовремя.</span><button class="btn gold sm" data-a="tab" data-v="home">К намазам</button></div>');
+      return out.join('');
     }
-    const canOpen = selKey <= today;
-    out.push('<div class="card" style="padding:18px 16px 16px;display:flex;flex-direction:column;gap:18px"><div class="between" style="align-items:flex-end"><span class="col" style="gap:4px"><span class="small sub" style="font-weight:700">Средний итог · ' + range + '</span><span class="big-serif num" style="font-size:60px">' + pct(avg((x) => x.overall)) + '</span></span><span class="col" style="align-items:flex-end;gap:6px"><span style="font-size:13px;font-weight:800">' + WD_SHORT[weekday(selKey)] + ', ' + fmtDate(selKey) + ' · ' + (selKey > today ? 'впереди' : pct(selSc ? selSc.overall : null)) + '</span>' + (canOpen && selKey !== today ? '<button class="btn ghost sm" data-a="openDay" data-v="' + selKey + '" style="min-height:34px">Открыть день</button>' : '') + '</span></div>' + chart + '</div>');
-    if (!sc.length) out.push('<div class="card empty"><span style="font-size:15px;font-weight:800">Пока нет отметок за этот период</span><span class="small sub" style="font-size:13px;line-height:1.5">Отмечайте намазы на главной — здесь появятся итоги, серии и статистика.</span></div>');
-    const lvl = S.set.level;
-    const cats = [['Фард-намазы', avg((x) => x.fard)]];
-    if (lvl !== 'start') cats.push(['Сунна и прочее', avg((x) => x.sunna)], ['Азкары', avg((x) => x.azkar)], ['Зикры', avg((x) => x.zikr)]);
-    out.push('<div class="card list">' + cats.map((c) => '<div style="display:flex;flex-direction:column;gap:8px;padding:13px 16px"><div class="between"><span style="font-size:14px;font-weight:700">' + c[0] + '</span><span class="num" style="font-size:14px;font-weight:800">' + pct(c[1]) + '</span></div><span class="bar" style="height:6px"><span style="width:' + Math.round(Math.min(c[1] || 0, 1) * 100) + '%"></span></span></div>').join('') + '</div>');
+    const avg = avgOf(past, (x) => x.overall), prevKeys = weekOf(addDays(keys[0], -7)), prev = avgOf(prevKeys, (x) => x.overall);
+    let cmp = range;
+    if (avg !== null && prev !== null) { const dd = Math.round((avg - prev) * 100); cmp += dd > 0 ? ' · лучше прошлой на ' + dd + '%' : dd === 0 ? ' · как на прошлой' : ' · прошлая неделя ' + Math.round(prev * 100) + '%'; }
+    const kpi = [['Фард вовремя', onTime + ' из ' + due, 'var(--emerald)']];
+    if (lvl !== 'start') {
+      const span = past.filter((k) => k >= first), n = span.length;
+      const az = span.reduce((a, k) => a + (S.days[k] && azDone(S.days[k], 'morning') ? 1 : 0) + (S.days[k] && azDone(S.days[k], 'evening') ? 1 : 0), 0);
+      kpi.push(['Азкары', az + ' из ' + n * 2, 'var(--blue)']);
+    }
+    if (S.read && S.read.log) { const pg = keys.reduce((a, k) => a + (S.read.log[k] || 0), 0); kpi.push([S.read.book === 'saadi' ? 'Тафсир' : 'Чтение', pg + ' стр.', 'var(--gold)']); }
+    else if (lvl !== 'start') { const sn = avgOf(past, (x) => x.sunna); kpi.push(['Сунна', pct(sn), 'var(--gold)']); }
+    out.push('<section class="card pr-sum" aria-label="Итог недели"><span class="pr-ring">' + ring(avg || 0, 104, 45, 9) + '<span><b class="num">' + (avg === null ? '—' : Math.round(avg * 100) + '%') + '</b><small>неделя</small></span></span>' +
+      '<span class="col grow" style="gap:9px"><span class="li-m">' + cmp + '</span>' + kpi.map((x) => '<span class="pr-kpi"><i style="background:' + x[2] + '"></i><span class="grow">' + x[0] + '</span><b class="num">' + x[1] + '</b></span>').join('') + '</span></section>');
+    // сетка намазов
+    const cnt = { mosque: 0, jamaat: 0, done: 0, qada: 0, missed: 0 };
+    past.forEach((k) => { const d = S.days[k]; if (!d) return; PRAYERS.forEach((p) => { let st = d.f[p.id]; if (st === 'juma') st = 'mosque'; if (st && cnt[st] !== undefined) cnt[st]++; }); });
+    const legend = [['mosque', 'В мечети'], ['jamaat', 'Джамаатом'], ['done', 'Вовремя'], ['qada', 'Каза'], ['missed', 'Пропущен']].filter((x) => lvl !== 'start' || x[0] === 'done' || x[0] === 'missed');
+    out.push('<section class="card pad pr-week" aria-label="Намазы недели"><div class="sec-h in"><h2 class="h2">Намазы недели</h2><span class="sec-m num">' + onTime + ' из ' + due + ' вовремя</span></div>' + vPrGrid(keys, today) +
+      '<div class="pg-leg">' + legend.map((x) => '<span><i style="background:' + ST_COLOR[x[0]] + '"></i>' + x[1] + (cnt[x[0]] ? ' <b class="num">' + cnt[x[0]] + '</b>' : '') + '</span>').join('') + '</div>' +
+      (marked.length ? '' : '<span class="li-m">На этой неделе отметок пока нет. Нажмите на день, чтобы открыть его.</span>') + '</section>');
+    if (gamOn() && S.loaded) out.push(vGoalCard(false));
+    // постоянство
+    const last7 = [6, 5, 4, 3, 2, 1, 0].map((i) => addDays(today, -i));
+    const st = [[(d) => PRAYERS.every((p) => ON_TIME[d.f[p.id]]), 'Все фарды вовремя']];
+    if (lvl !== 'start') st.push([(d) => azDone(d, 'morning'), 'Утренние азкары'], [(d) => azDone(d, 'evening'), 'Вечерние азкары']);
+    st.push([(d) => PRAYERS.some((p) => d.f[p.id] === 'mosque' || d.f[p.id] === 'juma'), 'Хотя бы один намаз в мечети']);
+    out.push('<section class="sec" aria-label="Постоянство"><div class="sec-h"><h2 class="h2">Постоянство</h2><span class="sec-m">последние 7 дней</span></div><div class="card list">' + st.map((x) => {
+      const n = streak(x[0]);
+      return '<div class="li"><span class="pr-st"><b class="num">' + n + '</b><small>' + plural(n, 'день', 'дня', 'дней') + '</small></span><span class="li-c" style="gap:7px"><span class="li-t">' + x[1] + '</span><span class="pr-dots">' + last7.map((k) => '<i class="' + (S.days[k] && x[0](S.days[k]) ? 'on' : '') + '"></i>').join('') + '</span></span></div>';
+    }).join('') + '</div></section>');
+    // план чтения
+    const rs = rState();
+    if (rs) {
+      const R = rs.R, frac = rs.pos / rs.total, ahead = rs.ahead || 0;
+      out.push('<button class="card pad pr-read" data-a="sheet" data-v="read"><span class="sec-h in"><span class="h2">' + esc(R.title) + '</span><span class="sec-m num" style="color:' + (rs.done ? 'var(--emerald-text)' : ahead >= 0 ? 'var(--emerald-text)' : 'var(--amber-text)') + '">' + (rs.done ? 'прочитан' : rs.before ? 'с ' + fmtDate(R.start) : ahead > 0 ? '+' + ahead + ' стр. к плану' : ahead === 0 ? 'по плану' : '−' + Math.abs(ahead) + ' стр. от плана') + '</span></span>' +
+        '<span class="bar" style="height:8px"><span style="width:' + (frac * 100).toFixed(1) + '%"></span></span><span class="li-m num">' + rs.pos + ' из ' + rs.total + ' стр.' + (rs.before ? '' : ' · день ' + Math.min(rs.di, R.days) + ' из ' + R.days) + (isSaadi(R) && readG(R) >= 0 ? ' · сейчас ' + ayName(readG(R)) : '') + '</span></button>');
+    }
+    if (lvl === 'ihsan') out.push(vDebts(past));
+    return out.join('');
+  }
+  function vDebts(keys) {
+    const debt = qadaDebt(), fd = fastDebt(), nf = nextFasting(todayKey());
+    let qadaMade = 0, fasts = 0;
+    keys.forEach((k) => { const d = S.days[k]; if (!d) return; PRAYERS.forEach((p) => { if (d.f[p.id] === 'qada') qadaMade++; }); if (d.p === 'fast' || d.p === 'qada') fasts++; });
+    return '<section class="sec" aria-label="Каза и посты"><div class="sec-h"><h2 class="h2">Каза и посты</h2></div>' +
+      '<div class="card pad pr-debt"><div class="between"><span class="li-c"><span class="li-t">Каза-долг</span><span class="li-m">' + (debt ? 'Пропущенные фард-намазы · восполнено за период: ' + qadaMade : 'Долга нет, альхамдулиллях') + '</span></span><b class="pr-big num" style="color:' + (debt ? 'var(--amber-text)' : 'var(--emerald-text)') + '">' + debt + '</b></div>' +
+      '<div class="row" style="gap:8px">' + (debt ? '<button class="btn gold sm grow" data-a="qadaDone">Восполнил намаз</button>' : '') + '<button class="btn ghost sm grow" data-a="sheet" data-v="qada">Прошлые годы</button></div></div>' +
+      '<div class="card list"><button class="li" data-a="sheet" data-v="fast"><span class="li-c"><span class="li-t">Посты за период</span><span class="li-m">' + (fd ? 'Долг по постам: ' + fd + ' ' + plural(fd, 'день', 'дня', 'дней') : 'Долга по постам нет') + '</span></span><b class="li-big num">' + fasts + '</b></button>' +
+      (nf ? '<div class="li"><span class="li-c"><span class="li-t">Ближайший желательный пост</span><span class="li-m">' + WD_FULL[weekday(nf.key)] + ', ' + fmtDate(nf.key) + (nf.info.text !== WD_FULL[weekday(nf.key)] ? ' · ' + nf.info.text : '') + '</span></span></div>' : '') + '</div></section>';
+  }
+  function vProgMonth() {
+    const P = S.prog, today = todayKey(), lvl = S.set.level, out = [];
+    const keys = monthKeys(), past = keys.filter((k) => k <= today), first = firstMark();
+    const selKey = P.day || today, selSc = scores(selKey), avg = avgOf(past, (x) => x.overall);
+    const lead = (weekday(keys[0]) + 6) % 7;
+    let cells = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((w) => '<span class="cal-w">' + w + '</span>').join('');
+    for (let i = 0; i < lead; i++) cells += '<span></span>';
+    keys.forEach((k) => { const s = scores(k), v = s ? s.overall : null; const cls = k > today ? 'fu' : v === null ? 'h0' : v >= 0.9 ? 'h4c' : v >= 0.75 ? 'h3c' : v >= 0.6 ? 'h2c' : 'h1c'; cells += '<button class="' + cls + (k === selKey ? ' on' : '') + ' num" data-a="calDay" data-v="' + k + '" aria-label="' + fmtDate(k) + ': ' + (k > today ? 'ещё впереди' : pct(v)) + '"' + (k === today ? ' style="font-weight:800"' : '') + '>' + parseKey(k).d + '</button>'; });
+    out.push('<section class="card pad pr-month" aria-label="Месяц"><div class="between" style="align-items:flex-end"><span class="col" style="gap:4px"><span class="li-m">Средний итог · ' + MONTHS_NOM[parseKey(today).m - 1] + '</span><b class="pr-big num" style="font-size:44px">' + (avg === null ? '—' : Math.round(avg * 100) + '%') + '</b></span>' +
+      '<span class="col" style="align-items:flex-end;gap:6px"><span class="li-t" style="font-size:13.5px">' + WD_SHORT[weekday(selKey)] + ', ' + fmtDate(selKey) + ' · ' + (selKey > today ? 'впереди' : pct(selSc ? selSc.overall : null)) + '</span>' + (selKey <= today && selKey !== today ? '<button class="btn ghost sm" data-a="openDay" data-v="' + selKey + '" style="min-height:34px">Открыть день</button>' : '') + '</span></div>' +
+      '<div class="cal">' + cells + '</div><div class="pg-leg">' + [['h1c', 'ниже 60%'], ['h2c', '60–74%'], ['h3c', '75–89%'], ['h4c', '90%+']].map((l) => '<span><i class="' + l[0] + '"></i>' + l[1] + '</span>').join('') + '</div></section>');
+    if (!first) { out.push('<div class="card pr-empty"><span class="li-t">Пока нет отметок</span><span class="li-m">Отмечайте намазы на экране «Сегодня» — здесь появятся итоги месяца.</span><button class="btn gold sm" data-a="tab" data-v="home">К намазам</button></div>'); return out.join(''); }
+    const cats = [['Фард-намазы', avgOf(past, (x) => x.fard), 'var(--emerald)']];
+    if (lvl !== 'start') cats.push(['Сунна и прочее', avgOf(past, (x) => x.sunna), 'var(--gold)'], ['Азкары', avgOf(past, (x) => x.azkar), 'var(--blue)'], ['Зикры', avgOf(past, (x) => x.zikr), 'var(--violet-text)']);
+    out.push('<section class="sec" aria-label="По разделам"><div class="sec-h"><h2 class="h2">По разделам</h2></div><div class="card list">' + cats.map((c) => '<div class="li col-li"><span class="between"><span class="li-t">' + c[0] + '</span><b class="num">' + pct(c[1]) + '</b></span><span class="bar" style="height:6px"><span style="width:' + Math.round(Math.min(c[1] || 0, 1) * 100) + '%;background:' + c[2] + '"></span></span></div>').join('') + '</div></section>');
     const cnt = { mosque: 0, jamaat: 0, done: 0, qada: 0, missed: 0 };
     past.forEach((k) => { const d = S.days[k]; if (!d) return; PRAYERS.forEach((p) => { let st = d.f[p.id]; if (st === 'juma') st = 'mosque'; if (st && cnt[st] !== undefined) cnt[st]++; }); });
     const tot = Object.keys(cnt).reduce((a, x) => a + cnt[x], 0);
-    out.push('<h2 class="h2" style="padding:0 4px">Фард-намазы</h2><div class="tiles3">' + [['mosque', 'В мечети', 'var(--gold)'], ['jamaat', 'Джамаатом', 'var(--blue)'], ['done', 'Сделал', 'var(--emerald)'], ['qada', 'Каза', 'var(--amber)'], ['missed', 'Пропущено', 'var(--red)']].map((x) => '<div class="stat"><b class="num">' + cnt[x[0]] + '</b><span class="row small sub" style="gap:6px;font-weight:700"><span class="dot" style="background:' + x[2] + '"></span>' + x[1] + '</span></div>').join('') +
-      '<div class="stat" style="background:var(--gold-soft);border-color:var(--gold-line)"><b class="num" style="color:var(--gold-hi)">' + (tot ? Math.round((cnt.mosque + cnt.jamaat) / tot * 100) + '%' : '—') + '</b><span class="small" style="font-weight:700;color:var(--gold-hi)">джамаатом</span></div></div>');
-    // азкары утром и вечером за период: сколько из возможных (считаем с первого дня, когда вы начали отмечать)
+    out.push('<section class="sec" aria-label="Фард-намазы"><div class="sec-h"><h2 class="h2">Фард-намазы</h2>' + (tot && lvl !== 'start' ? '<span class="sec-m num">джамаатом ' + Math.round((cnt.mosque + cnt.jamaat) / tot * 100) + '%</span>' : '') + '</div><div class="card list">' +
+      [['mosque', 'В мечети'], ['jamaat', 'Джамаатом'], ['done', 'Вовремя'], ['qada', 'Каза'], ['missed', 'Пропущено']].filter((x) => lvl !== 'start' || x[0] === 'done' || x[0] === 'missed').map((x) => '<div class="li"><span class="dot" style="width:10px;height:10px;background:' + ST_COLOR[x[0]] + '"></span><span class="li-c"><span class="li-t">' + x[1] + '</span></span><b class="num">' + cnt[x[0]] + '</b></div>').join('') + '</div></section>');
     if (lvl !== 'start') {
-      const firstK = Object.keys(S.days).filter((k) => !isEmptyDay(S.days[k])).sort()[0];
-      const span = firstK ? past.filter((k) => k >= firstK) : [];
-      const n = span.length;
-      const m = span.filter((k) => S.days[k] && azDone(S.days[k], 'morning')).length;
-      const e = span.filter((k) => S.days[k] && azDone(S.days[k], 'evening')).length;
+      const span = past.filter((k) => k >= first), n = span.length;
+      const m = span.filter((k) => S.days[k] && azDone(S.days[k], 'morning')).length, e = span.filter((k) => S.days[k] && azDone(S.days[k], 'evening')).length;
       const pc = (a, b) => (b ? Math.round(a / b * 100) : 0);
-      const row = (label, got, of, color, strong) => '<div style="display:flex;flex-direction:column;gap:8px;padding:13px 16px"><div class="between"><span style="font-size:' + (strong ? 15 : 14) + 'px;font-weight:' + (strong ? 800 : 700) + '">' + label + '</span><span class="num" style="font-size:14px;font-weight:800"><span class="sub" style="font-weight:700">' + got + ' из ' + of + ' · </span>' + pc(got, of) + '%</span></div><span class="bar" style="height:6px"><span style="width:' + pc(got, of) + '%;background:' + color + '"></span></span></div>';
-      if (n) out.push('<h2 class="h2" style="padding:0 4px">Азкары утром и вечером</h2><div class="card list">' + row('Утренние', m, n, 'var(--gold)') + row('Вечерние', e, n, 'var(--blue)') + row('Всего', m + e, n * 2, 'var(--emerald)', true) + '</div>' +
-        (firstK > past[0] ? '<div class="small sub on-sky" style="padding:0 6px;margin-top:-4px">Считаются дни с ' + fmtDate(firstK) + ' — с начала ваших отметок</div>' : ''));
+      const row = (label, got, of, color) => '<div class="li col-li"><span class="between"><span class="li-t">' + label + '</span><b class="num"><span class="sub" style="font-weight:700">' + got + ' из ' + of + ' · </span>' + pc(got, of) + '%</b></span><span class="bar" style="height:6px"><span style="width:' + pc(got, of) + '%;background:' + color + '"></span></span></div>';
+      if (n) out.push('<section class="sec" aria-label="Азкары"><div class="sec-h"><h2 class="h2">Азкары</h2>' + (first > past[0] ? '<span class="sec-m">с ' + fmtDate(first) + '</span>' : '') + '</div><div class="card list">' + row('Утренние', m, n, 'var(--gold)') + row('Вечерние', e, n, 'var(--blue)') + '</div></section>');
     }
-    const st = [[streak((d) => PRAYERS.every((p) => ON_TIME[d.f[p.id]])), 'Все фарды в своё время']];
-    if (lvl !== 'start') st.push([streak((d) => azDone(d, 'morning')), 'Утренние азкары'], [streak((d) => D.ZIKRS.every((z, i) => (d.z[i] || 0) >= 100)), 'Все зикры по 100']);
-    st.push([streak((d) => PRAYERS.some((p) => d.f[p.id] === 'mosque' || d.f[p.id] === 'juma')), 'Хотя бы один намаз в мечети']);
-    out.push('<h2 class="h2" style="padding:0 4px">Серии</h2><div class="card list">' + st.map((s) => '<div class="x-row"><span class="num" style="width:36px;height:36px;flex:none;border-radius:18px 18px 8px 8px;background:var(--gold-soft);color:var(--gold-hi);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800">' + s[0] + '</span><span class="grow" style="font-size:14px;font-weight:600">' + s[1] + '</span><span class="small sub">' + plural(s[0], 'день', 'дня', 'дней') + ' подряд</span></div>').join('') + '</div>');
-    if (lvl === 'ihsan') {
-      let qadaMade = 0, fasts = 0;
-      past.forEach((k) => { const d = S.days[k]; if (!d) return; PRAYERS.forEach((p) => { if (d.f[p.id] === 'qada') qadaMade++; }); if (d.p === 'fast' || d.p === 'qada') fasts++; });
-      out.push('<div class="bento"><div class="card pad" style="display:flex;flex-direction:column;gap:6px"><span class="small sub" style="font-weight:700">Каза-долг</span><span class="num" style="font-family:var(--serif);font-size:32px;font-weight:700;line-height:1;color:' + (qadaDebt() ? 'var(--amber-text)' : 'var(--emerald-text)') + '">' + qadaDebt() + '</span><span class="small sub">Восполнено за период: ' + qadaMade + '</span></div><div class="card pad" style="display:flex;flex-direction:column;gap:6px"><span class="small sub" style="font-weight:700">Посты за период</span><span class="num" style="font-family:var(--serif);font-size:32px;font-weight:700;line-height:1">' + fasts + '</span><span class="small sub">Долг по постам: ' + fastDebt() + ' ' + plural(fastDebt(), 'день', 'дня', 'дней') + '</span></div></div>');
-    }
+    if (lvl === 'ihsan') out.push(vDebts(past));
     return out.join('');
   }
 
@@ -1453,7 +1525,7 @@
   function vPath() {
     const G = gameStats(), st = stageOf(G.fullDays), out = [];
     const toNext = st.next ? st.next - G.fullDays : 0, frac = st.next ? (G.fullDays - st.prev) / (st.next - st.prev) : 1;
-    out.push('<div class="card gm-stage"><div class="between" style="align-items:flex-end"><span class="col" style="gap:2px"><span class="eyebrow" style="padding:0">Путь</span><span class="big-serif" style="font-size:40px;line-height:1;white-space:nowrap">' + (st.stage ? 'Ступень ' + st.stage : 'Начало пути') + '</span></span><span class="col" style="align-items:flex-end"><span class="num" style="font-family:var(--serif);font-size:30px;font-weight:700;line-height:1;color:var(--gold-hi)">' + G.fullDays + '</span><span class="small sub">' + plural(G.fullDays, 'день', 'дня', 'дней') + ' постоянства</span></span></div>' +
+    out.push('<div class="card gm-stage"><div class="between" style="align-items:flex-end"><span class="col" style="gap:2px"><span class="eyebrow" style="padding:0">Путь</span><span class="big-serif" style="font-size:32px;line-height:1.05">' + (st.stage ? 'Ступень ' + st.stage : 'Начало пути') + '</span></span><span class="col" style="align-items:flex-end"><span class="num" style="font-family:var(--serif);font-size:30px;font-weight:700;line-height:1;color:var(--gold-hi)">' + G.fullDays + '</span><span class="small sub">' + plural(G.fullDays, 'день', 'дня', 'дней') + ' постоянства</span></span></div>' +
       starsRow(st.stage) +
       '<span class="bar" style="height:6px"><span style="width:' + Math.round(frac * 100) + '%"></span></span>' +
       '<span class="small sub" style="line-height:1.5">' + (st.next ? 'До ' + (st.stage + 1) + '-й ступени — ' + toNext + ' ' + plural(toNext, 'день', 'дня', 'дней') + '. ' : 'Все ступени пройдены, машаАллах. ') + 'День постоянства — все пять фард-намазов вовремя. Пропуск не отнимает пройденного.</span>' +
@@ -1591,23 +1663,6 @@
     saveRead(); if (soft) qPillRefresh(); else render();
   }
   const READ_ICON = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6.5C10 5 7 4.5 3.5 5v13c3.5-.5 6.5 0 8.5 1.5 2-1.5 5-2 8.5-1.5V5C17 4.5 14 5 12 6.5z"/><path d="M12 6.5v13"/></svg>';
-  function vReadCard() {
-    const st = rState();
-    if (!st) {
-      if (S.set.readOffer === 'no') return '';
-      return '<div class="card pad rd"><div class="between"><span class="row" style="gap:10px"><span class="rd-ico">' + READ_ICON + '</span><span class="col"><span style="font-size:15px;font-weight:800">План чтения</span><span class="small sub">Тафсир ас-Саади за 90 дней — по 26 стр. в день</span></span></span><button class="icon-btn sm" data-a="readOfferNo" aria-label="Скрыть">' + I.close + '</button></div><button class="btn gold sm" data-a="sheet" data-v="read">Поставить цель</button></div>';
-    }
-    const R = st.R, frac = st.pos / st.total, day = tfToday(st), ay = (a, b) => (day ? ayRange(a, b) + ' · ' : '');
-    let right, line;
-    if (st.done) { right = '<span class="rd-big" style="color:var(--emerald-text)">' + I.check + '</span>'; line = 'Прочитан целиком ' + fmtDate(R.done) + ' — машаАллах'; }
-    else if (st.before) { right = '<span class="col" style="align-items:flex-end"><span class="rd-big num">' + st.base + '</span><span class="small sub">стр. в день</span></span>'; line = 'Начало ' + fmtDate(R.start) + ' · ' + ay(0, day && day.to) + rRange(R, 1, st.base); }
-    else if (st.left > 0) { right = '<span class="col" style="align-items:flex-end"><span class="rd-big num">' + st.left + '</span><span class="small sub">стр. осталось</span></span>'; line = 'Сегодня: ' + ay(day && day.from, day && day.to) + rRange(R, st.pos + 1, st.posStart + st.norm); }
-    else { right = '<span class="col" style="align-items:flex-end"><span class="rd-big" style="color:var(--emerald-text)">' + I.check + '</span><span class="small" style="color:var(--emerald-text);font-weight:800">норма</span></span>'; line = 'Норма выполнена · вы на ' + (day && readG(R) >= 0 ? ayName(readG(R)) + ' · ' : '') + rLabel(R, Math.max(1, st.pos)); }
-    const go = isSaadi(R) && !st.done && !st.before ? '<button class="btn gold sm rd-go" data-a="readOpen">' + READ_ICON + (st.left > 0 ? 'Читать в приложении' : 'Читать дальше') + '</button>' : '';
-    return '<div class="card pad rd"><button class="rd-main" data-a="sheet" data-v="read"><div class="between" style="width:100%"><span class="row" style="gap:10px"><span class="rd-ico">' + READ_ICON + '</span><span class="col"><span style="font-size:15px;font-weight:800">' + esc(R.title) + '</span><span class="small sub">' + (st.before ? 'Цель: ' + R.days + ' дней' : st.done ? 'Цель достигнута' : 'День ' + Math.min(st.di, R.days) + ' из ' + R.days + ' · до ' + fmtDate(st.end)) + '</span></span></span>' + right + '</div>' +
-      '<span class="small" style="font-weight:700">' + line + '</span><span class="bar" style="height:6px;width:100%"><span style="width:' + (frac * 100).toFixed(1) + '%"></span></span>' +
-      '<span class="small sub num">Прочитано ' + st.pos + ' из ' + st.total + ' · ' + Math.floor(frac * 100) + '%</span></button>' + go + '</div>';
-  }
   function vReadSheet(sh, head) {
     const st = rState();
     if (!st) {
@@ -1833,7 +1888,7 @@
     const out = ['<h1 class="h1">Ещё</h1>'];
     const qb = S.set.lat != null ? qiblaBearing() : null;
     if (qb != null) {
-      out.push('<div class="qibla"><div style="position:absolute;left:0;right:0;top:30px;text-align:center;color:#C9CEDA" class="eyebrow">Кибла · <span class="num">' + Math.round(qb) + '°</span> от севера</div>' +
+      out.push('<div class="qibla"><div class="qibla-t">Кибла · <span class="num">' + Math.round(qb) + '°</span> от севера</div>' +
         '<svg class="compass" viewBox="0 0 230 230" aria-hidden="true" style="font-family:var(--sans)"><g id="dial"><circle cx="115" cy="115" r="104" fill="none" stroke="rgba(255,255,255,.12)"/><circle cx="115" cy="115" r="86" fill="none" stroke="rgba(230,190,110,.25)" stroke-dasharray="1 7"/>' +
         '<g stroke="rgba(255,255,255,.35)" stroke-width="1.5" stroke-linecap="round"><path d="M115 14v10M115 206v10M14 115h10M206 115h10M43.6 43.6l5.6 5.6M180.8 180.8l5.6 5.6M43.6 186.4l5.6-5.6M180.8 49.2l5.6-5.6"/></g>' +
         '<text x="115" y="44" fill="#F4EFE6" font-size="12" font-weight="800" text-anchor="middle">С</text><text x="188" y="119" fill="#A7AEC0" font-size="11" font-weight="700" text-anchor="middle">В</text><text x="115" y="194" fill="#A7AEC0" font-size="11" font-weight="700" text-anchor="middle">Ю</text><text x="42" y="119" fill="#A7AEC0" font-size="11" font-weight="700" text-anchor="middle">З</text>' +
@@ -1849,31 +1904,36 @@
       const ev = h.d === 1 && h.m === 9 ? ['Начало Рамадана', 'Обязательный пост весь месяц'] : h.d === 1 && h.m === 10 ? ['Ид аль-Фитр', 'Праздник разговения, пост запрещён'] : h.d === 9 && h.m === 12 ? ['День Арафа', 'Желательный пост'] : h.d === 10 && h.m === 12 ? ['Ид аль-Адха', 'Праздник жертвоприношения'] : h.d === 1 && h.m === 1 ? ['Новый год по хиджре', D.HIJRI_MONTHS_NOM[0] + ' ' + h.y] : h.d === 1 && h.m === 7 ? ['Начало Раджаба', 'Один из запретных месяцев'] : h.d === 10 && h.m === 1 ? ['Ашура', 'Желательный пост'] : null;
       if (ev && !seen[ev[0]]) { seen[ev[0]] = 1; events.push([k, ev]); }
     }
-    out.push('<div class="card pad" style="display:flex;flex-direction:column;gap:12px"><div class="between" style="align-items:baseline"><span style="font-size:16px;font-weight:800">Календарь хиджры</span><span class="small sub">даты примерные</span></div><div class="small sub" style="font-size:13px">Сегодня ' + hijriText(t) + '</div>' +
-      events.map((e) => { const p = parseKey(e[0]); return '<div class="row"><span style="width:54px;flex:none;padding:8px 0;border-radius:27px 27px 10px 10px;background:var(--gold-soft);border:1px solid var(--gold-line);display:flex;flex-direction:column;align-items:center"><span class="num" style="font-family:var(--serif);font-size:22px;font-weight:700;line-height:1;color:var(--gold-hi)">' + p.d + '</span><span style="font-size:10.5px;font-weight:800;color:var(--gold-hi)">' + MONTHS_GEN[p.m - 1].slice(0, 3).toUpperCase() + '</span></span><span class="col grow"><span style="font-size:14.5px;font-weight:800">' + e[1][0] + '</span><span class="small sub">' + e[1][1] + (p.y !== parseKey(t).y ? ' · ' + p.y : '') + '</span></span></div>'; }).join('') + '</div>');
+    out.push('<section class="sec" aria-label="Календарь хиджры"><div class="sec-h"><h2 class="h2">Календарь хиджры</h2><span class="sec-m">даты примерные</span></div><div class="card pad cal-ev"><div class="li-m">Сегодня ' + hijriText(t) + '</div>' +
+      events.map((e) => { const p = parseKey(e[0]); return '<div class="row"><span class="date-t"><b class="num">' + p.d + '</b><small>' + MONTHS_GEN[p.m - 1].slice(0, 3) + '</small></span><span class="li-c"><span class="li-t">' + e[1][0] + '</span><span class="li-m">' + e[1][1] + (p.y !== parseKey(t).y ? ' · ' + p.y : '') + '</span></span></div>'; }).join('') + '</div></section>');
 
     // настройки
     const m = METHODS.find((x) => x[0] === S.set.method);
     const lvlName = { start: 'Начало', effort: 'Усердие', ihsan: 'Ихсан' }[S.set.level] || '—';
-    const rows = [
-      ['city', 'Город', S.set.city || (S.set.lat != null ? 'Моё местоположение' : 'Не выбран')],
-      ['method', 'Метод расчёта', m ? m[1] : ''],
-      ['madhab', 'Время Асра', S.set.madhab === 'Hanafi' ? 'Ханафитское' : 'Стандартное'],
-      ['times', 'Поправки и икама', (() => { const a = Object.keys(S.set.tadj || {}).some((x) => +S.set.tadj[x]); const q = hasIqama(); return a && q ? 'Поправки · икама' : a ? 'Свои поправки' : q ? 'Икама' : 'По расчёту'; })()],
-      ['read', 'План чтения', S.read ? S.read.title : 'Нет'],
-      ['gam', 'Путь и знаки', gamOn() ? 'Включены' : 'Выключены'],
-      ['sky', 'Небо', { live: 'Живое', night: 'Всегда ночь', day: 'Всегда день' }[S.set.sky || 'live']],
-      ['vib', 'Вибрация', S.set.vib === false ? 'Выключена' : { soft: 'Мягкая', medium: 'Средняя', heavy: 'Сильная' }[S.set.vibT || 'medium']],
-      ['level', 'Мой уровень', lvlName],
-      ['hijri', 'Дата хиджры', S.set.hijriAdj ? (S.set.hijriAdj > 0 ? '+' : '') + S.set.hijriAdj + ' дн.' : 'Без сдвига'],
-      ['theme', 'Тема', { auto: 'Как в Telegram', dark: 'Тёмная', light: 'Светлая' }[S.set.theme]],
-      ['qada', 'Долг за прошлые годы', (S.set.qadaBase || 0) + ' нам. · ' + (S.set.fastBase || 0) + ' пост.']
+    const tadjTxt = (() => { const a = Object.keys(S.set.tadj || {}).some((x) => +S.set.tadj[x]); const q = hasIqama(); return a && q ? 'Поправки · икама' : a ? 'Свои поправки' : q ? 'Икама' : 'По расчёту'; })();
+    const groups = [
+      ['Время намазов', [
+        ['city', 'Город', S.set.city || (S.set.lat != null ? 'Моё местоположение' : 'Не выбран')],
+        ['method', 'Метод расчёта', m ? m[1] : ''],
+        ['madhab', 'Время Асра', S.set.madhab === 'Hanafi' ? 'Ханафитское' : 'Стандартное'],
+        ['times', 'Поправки и икама', tadjTxt]]],
+      ['Учёт', [
+        ['level', 'Мой уровень', lvlName],
+        ['mode', 'Отметка намазов', S.set.level === 'start' ? 'Просто' : S.set.detailed !== false ? 'Подробно' : 'Просто'],
+        ['read', 'План чтения', S.read ? S.read.title : 'Нет'],
+        ['gam', 'Путь и знаки', gamOn() ? 'Включены' : 'Выключены'],
+        ['qada', 'Долг за прошлые годы', (S.set.qadaBase || 0) + ' нам. · ' + (S.set.fastBase || 0) + ' пост.']]],
+      ['Вид и отклик', [
+        ['theme', 'Тема', { auto: 'Как в Telegram', dark: 'Тёмная', light: 'Светлая' }[S.set.theme]],
+        ['sky', 'Небо в карточке намаза', { live: 'Живое', night: 'Всегда ночь', day: 'Всегда день' }[S.set.sky || 'live']],
+        ['vib', 'Вибрация', S.set.vib === false ? 'Выключена' : { soft: 'Мягкая', medium: 'Средняя', heavy: 'Сильная' }[S.set.vibT || 'medium']],
+        ['hijri', 'Дата хиджры', S.set.hijriAdj ? (S.set.hijriAdj > 0 ? '+' : '') + S.set.hijriAdj + ' дн.' : 'Без сдвига']]]
     ];
-    out.push('<div class="eyebrow">Настройки</div><div class="card list" style="overflow:hidden">' + rows.map((r) => '<button class="list-row" data-a="sheet" data-v="' + r[0] + '" style="min-height:54px"><span class="grow" style="font-size:14.5px;font-weight:600">' + r[1] + '</span><span class="small sub" style="font-size:13.5px;text-align:right">' + esc(r[2]) + '</span>' + I.chev + '</button>').join('') + '</div>');
+    groups.forEach((g) => out.push('<section class="sec" aria-label="' + g[0] + '"><div class="sec-h"><h2 class="h2">' + g[0] + '</h2></div><div class="card list">' + g[1].filter((r) => r[0] !== 'mode' || S.set.level !== 'start').map((r) => '<button class="li" data-a="sheet" data-v="' + r[0] + '"><span class="li-c"><span class="li-t">' + r[1] + '</span></span><span class="li-val">' + esc(r[2]) + '</span>' + I.chev + '</button>').join('') + '</div></section>'));
     const connected = !!S.set.syncUrl;
     const stLabel = !connected ? 'Не подключено' : sync.busy ? 'Синхронизация…' : sync.status && sync.status !== 'ok' ? 'Ошибка' : 'Подключено';
     const stColor = !connected ? 'var(--sub)' : sync.status && sync.status !== 'ok' && !sync.busy ? 'var(--red-text)' : 'var(--emerald-text)';
-    let tb = '<div class="eyebrow">Таблица и бот</div><div class="card list" style="overflow:hidden"><button class="list-row" data-a="sheet" data-v="sync" style="min-height:54px"><span class="col grow"><span style="font-size:14.5px;font-weight:600">Google-таблица и напоминания</span>' + (connected && S.set.lastSync ? '<span class="small sub">синхронизировано ' + fmtTime(new Date(S.set.lastSync)) + ((S.set.pending || []).length ? ' · ждут отправки: ' + S.set.pending.length : '') + '</span>' : '') + '</span><span class="small" style="font-size:13.5px;color:' + stColor + ';font-weight:700">' + stLabel + '</span>' + I.chev + '</button>';
+    let tb = '<section class="sec" aria-label="Таблица и бот"><div class="sec-h"><h2 class="h2">Таблица и бот</h2></div><div class="card list"><button class="li" data-a="sheet" data-v="sync"><span class="li-c"><span class="li-t">Google-таблица и напоминания</span>' + (connected && S.set.lastSync ? '<span class="li-m">синхронизировано ' + fmtTime(new Date(S.set.lastSync)) + ((S.set.pending || []).length ? ' · ждут отправки: ' + S.set.pending.length : '') + '</span>' : '') + '</span><span class="li-val" style="color:' + stColor + '">' + stLabel + '</span>' + I.chev + '</button>';
     if (connected) {
       const R = S.set.remind || {};
       const sw = (key, label, hint) => '<div class="x-row"><span class="col grow"><span style="font-size:14.5px;font-weight:700">' + label + '</span><span class="small sub">' + hint + '</span></span><button class="switch" role="switch" aria-checked="' + (R[key] !== false) + '" aria-label="' + label + '" data-a="remind" data-v="' + key + '"><i></i></button></div>';
@@ -1888,9 +1948,9 @@
         sw('summary', 'Итог дня', 'В ' + (R.summaryTime || '21:30') + ' — что сделано и что осталось') +
         (R.summary !== false || R.fast !== false ? '<div style="padding:0 16px 12px"><div class="seg mini" role="group" aria-label="Время итога">' + ['20:00', '21:00', '21:30', '22:00', '23:00'].map((t) => '<button class="' + ((R.summaryTime || '21:30') === t ? 'on' : '') + '" data-a="remindTime" data-v="' + t + '">' + t + '</button>').join('') + '</div></div>' : '');
     }
-    out.push(tb + '</div>');
-    out.push('<div class="card pad" style="display:flex;flex-direction:column;gap:12px;background:linear-gradient(160deg,var(--gold-soft),transparent);border-color:var(--gold-line)"><span style="font-family:var(--serif);font-size:24px;font-weight:600;line-height:1.1">Садака джария</span><span class="small" style="font-size:13.5px;line-height:1.5">Приложение бесплатное и без рекламы. Поделитесь им с близкими — награда за каждого, кто будет пользоваться.</span>' + (SHARE_LINK ? '<button class="btn gold block" data-a="share">Поделиться</button>' : '') + '</div>');
-    out.push('<div class="small sub" style="text-align:center;padding:4px">Ибада · версия 1 · данные хранятся в ' + (store.cloud ? 'облаке Telegram' : 'этом браузере') + '</div>');
+    out.push(tb + '</div></section>');
+    out.push('<div class="card pad more-sj"><span class="more-sj-t">Садака джария</span><span class="li-m" style="color:var(--text)">Приложение бесплатное и без рекламы. Поделитесь им с близкими — награда за каждого, кто будет пользоваться.</span>' + (SHARE_LINK ? '<button class="btn gold block" data-a="share">Поделиться</button>' : '') + '</div>');
+    out.push('<div class="foot-note">Ибада · версия 2.0 · данные хранятся в ' + (store.cloud ? 'облаке Telegram' : 'этом браузере') + '</div>');
     return out.join('');
   }
 
@@ -1918,7 +1978,7 @@
     return '<div class="small sub" style="padding:0 6px;line-height:1.5">Сегодня, ' + fmtDate(k) + '. Поправка «Азан» сдвигает время начала. Икама показывается рядом с намазом, и бот может напоминать до неё.</div>' + rows.join('') +
       '<button class="btn ghost block" data-a="timesReset">Сбросить к расчёту</button><button class="btn gold block" data-a="closeSheet">Готово</button>';
   }
-  function vSheet() {
+  function vSheet(enter) {
     const sh = S.sheet; if (!sh) return '';
     let body = '';
     const head = (title, sub) => '<div class="grab"></div><div class="col" style="padding:6px 6px 4px"><div style="font-family:var(--serif);font-size:28px;font-weight:600;line-height:1.1">' + title + '</div>' + (sub ? '<div class="small sub" style="font-size:13px">' + sub + '</div>' : '') + '</div>';
@@ -1928,7 +1988,14 @@
       const opts = [['mosque', 'В мечети', 'Джамаатом в мечети — высшая награда', '150%'], ['jamaat', 'Джамаатом', 'Коллективно, вне мечети', '120%']];
       if (sh.id === 'dhuhr' && isFriday(k)) opts.unshift(['juma', 'Джума', 'Пятничный намаз в мечети', '150%']);
       opts.push(['done', 'Сделал', 'Один, в своё время', '100%'], ['qada', 'Восполнил (каза)', 'После окончания времени', '50%'], ['missed', 'Пропустил', 'Попадёт в каза-долг', '0%']);
-      body = head(pr.name, timeLine(k, pr, T) + ' · как вы совершили?') + opts.map((o) => opt('setStatus', sh.id + ':' + o[0], cur === o[0], o[1], o[2], o[3], 'st-' + o[0])).join('') + (cur ? '<button class="btn block" data-a="setStatus" data-v="' + sh.id + ':" style="background:none;color:var(--sub);font-size:14px">Снять отметку</button>' : '');
+      // сунна при этом намазе — здесь же, а не чипами на главном экране
+      const lvl = S.set.level, d = getDay(k), plan = planFor(k);
+      const subs = S.set.detailed && lvl !== 'start' ? PER_PRAYER[sh.id].filter((x) => plan[x[0]] > 0) : [];
+      const subsHtml = subs.length ? '<div class="sh-sec">Сунна при намазе</div><div class="card list">' + subs.map((x) => { const on = !!d.s[x[0]], L = SUNNA_FULL[x[0]] || [x[1], '']; return '<button class="li" data-a="sunna" data-v="' + x[0] + '" aria-pressed="' + on + '"><span class="li-c"><span class="li-t">' + L[0] + '</span>' + (L[1] ? '<span class="li-m">' + L[1] + '</span>' : '') + '</span><span class="ck2' + (on ? ' st-done' : '') + '">' + (on ? I.st.done : '') + '</span></button>'; }).join('') + '</div>' : '';
+      body = head(sh.id === 'dhuhr' && isFriday(k) ? 'Зухр / Джума' : pr.name, timeLine(k, pr, T) + ' · как вы совершили?') + opts.map((o) => opt('setStatus', sh.id + ':' + o[0], cur === o[0], o[1], o[2], o[3], 'st-' + o[0])).join('') + subsHtml + (cur ? '<button class="btn block quiet" data-a="setStatus" data-v="' + sh.id + ':">Снять отметку</button>' : '');
+    } else if (sh.type === 'mode') {
+      const det = S.set.detailed !== false;
+      body = head('Отметка намазов', 'Как отмечать намазы на экране «Сегодня»') + opt('mode', '1', det, 'Подробно', 'Нажатие на намаз открывает выбор: в мечети, джамаатом, сам, каза — и сунну при нём') + opt('mode', '0', !det, 'Просто', 'Одно нажатие — намаз совершён');
     } else if (sh.type === 'city') {
       const C = S.city;
       body = head('Город', 'Для расчёта времени намазов и киблы') +
@@ -2011,7 +2078,7 @@
       const k = viewKey(), cur = getDay(k).p, fi = fastingInfo(k);
       body = head('Пост · ' + fmtDate(k), fi ? fi.text : 'Обычный день') + [['fast', 'Постился', 'Добровольный или обязательный пост'], ['qada', 'Каза поста', 'Восполнил пропущенный день Рамадана'], ['missed', 'Пропустил', 'Пропущенный день Рамадана — станет долгом']].map((o) => opt('setFast', o[0], cur === o[0], o[1], o[2])).join('') + (cur ? '<button class="btn block" data-a="setFast" data-v="" style="background:none;color:var(--sub);font-size:14px">Снять отметку</button>' : '');
     }
-    return '<button class="scrim" data-a="closeSheet" aria-label="Закрыть"></button><div class="sheet' + (sh.type === 'tfa' ? ' sh-tall sh-tfa' : sh.type === 'qnav' ? ' sh-tall' : '') + '" role="dialog" aria-modal="true">' + body + '</div>';
+    return '<button class="scrim' + (enter ? ' enter' : '') + '" data-a="closeSheet" aria-label="Закрыть"></button><div class="sheet' + (sh.type === 'tfa' ? ' sh-tall sh-tfa' : sh.type === 'qnav' ? ' sh-tall' : '') + (enter ? ' enter' : '') + '" role="dialog" aria-modal="true">' + body + '</div>';
   }
 
   /* ===== отрисовка ===== */
@@ -2024,12 +2091,19 @@
     if (S.tab === 'quran' && S.quran.reader) return rd().bg === 'sky' ? 0.6 : 0.82;
     return { home: 0.08, zikr: 0.28, quran: 0.42, progress: 0.38, more: 0.38 }[S.tab] || 0.38;
   }
+  /* v12: живое небо больше не стоит за всеми экранами — оно только в карточке текущего намаза (и в читалке, если выбран фон «Небо»).
+     Остальные экраны — на спокойном фоне, и шапка Telegram окрашивается в тот же цвет. */
+  const APP_BG = { dark: '#0A0E1A', light: '#F3F0E9' };
   function updateSkyBg() {
-    if (!window.IbadaSky) return;
     const light = document.documentElement.classList.contains('light');
-    const lat = S.set.lat != null ? S.set.lat : 40, lng = S.set.lng != null ? S.set.lng : -new Date().getTimezoneOffset() / 4;
-    const h = hijri(todayKey());
-    const hdr = readerBgColor() || window.IbadaSky.update({ lat, lng, light, dim: skyDim(), ten: h.m === 9 && h.d >= 20, lowfx: LOWFX || REDUCE, fixed: S.set.sky === 'night' || S.set.sky === 'day' ? S.set.sky : '' });
+    const useSky = readingOn && rd().bg === 'sky', el = document.getElementById('sky');
+    if (el) el.classList.toggle('off', !useSky);
+    let hdr = readerBgColor();
+    if (useSky && window.IbadaSky) {
+      const o = skyOpts();
+      hdr = window.IbadaSky.update({ lat: o.lat, lng: o.lng, light, dim: skyDim(), ten: o.ten, lowfx: LOWFX || REDUCE, fixed: o.fixed });
+    }
+    if (!hdr) hdr = light ? APP_BG.light : APP_BG.dark;
     if (hdr && hdr !== lastHdr && tg) {
       lastHdr = hdr;
       try { if (ver('6.1')) { tg.setHeaderColor(hdr); tg.setBackgroundColor(hdr); } if (ver('7.10')) tg.setBottomBarColor(hdr); } catch (e) {}
@@ -2044,21 +2118,34 @@
   // Единственный «громкий» момент: отметка намаза — михраб вспыхивает светом
   function celebrate(id) {
     if (REDUCE || LOWFX) return;
-    const h = document.querySelector('.hero'), r = document.querySelector('.pr[data-id="' + id + '"]');
-    [h, r].forEach((el) => { if (!el) return; el.classList.remove('lit'); void el.offsetWidth; el.classList.add('lit'); });
-    setTimeout(() => { [document.querySelector('.hero'), document.querySelector('.pr[data-id="' + id + '"]')].forEach((el) => el && el.classList.remove('lit')); }, 1700);
+    const pick = () => [document.querySelector('.hero2'), document.querySelector('.pr2[data-id="' + id + '"]')];
+    pick().forEach((el) => { if (!el) return; el.classList.remove('lit'); void el.offsetWidth; el.classList.add('lit'); });
+    setTimeout(() => { pick().forEach((el) => el && el.classList.remove('lit')); }, 1700);
   }
+  // Заготовка вместо «Загрузка…»: силуэт экрана «Сегодня», пока читаются данные
+  const vSkeleton = () => '<div class="skel" aria-label="Загрузка" role="status"><div class="between"><span class="col" style="gap:8px"><i style="width:170px;height:12px"></i><i style="width:120px;height:16px"></i></span><i style="width:48px;height:48px;border-radius:24px"></i></div><i style="height:300px;border-radius:28px"></i><i style="width:96px;height:18px"></i><i style="height:310px;border-radius:24px"></i></div>';
+  let lastView = '', lastSheet = '';
   function render() {
     syncReading();
     applyTheme();
     const onb = !S.set.level;
     const reader = S.tab === 'quran' && S.quran.reader;
     const screen = $('#screen');
-    screen.className = 'screen' + (onb || reader ? ' no-tabs' : '') + (reader ? ' reader' : '');
-    screen.innerHTML = !S.loaded ? '<div class="loading" style="margin-top:40vh">Загрузка…</div>' : onb ? vOnboarding() : S.tab === 'home' ? vHome() : S.tab === 'zikr' ? vZikr() : S.tab === 'quran' ? vQuran() : S.tab === 'progress' ? vProgress() : vMore();
-    const tabs = [['home', 'Главная'], ['quran', 'Коран'], ['zikr', 'Зикр'], ['progress', 'Прогресс'], ['more', 'Ещё']];
+    // плавное появление — только когда сменился экран, а не при каждой отметке
+    const view = !S.loaded ? 'load' : onb ? 'onb' : S.tab + (reader ? ':r' : '') + (S.tab === 'progress' ? ':' + S.prog.period : '') + (S.tab === 'zikr' ? ':' + S.zView : '') + (S.viewKey || '');
+    const enter = view !== lastView && lastView !== '' && !REDUCE;
+    lastView = view;
+    screen.className = 'screen' + (onb || reader ? ' no-tabs' : '') + (reader ? ' reader' : '') + (enter ? ' enter' : '');
+    screen.innerHTML = !S.loaded ? vSkeleton() : onb ? vOnboarding() : S.tab === 'home' ? vHome() : S.tab === 'zikr' ? vZikr() : S.tab === 'quran' ? vQuran() : S.tab === 'progress' ? vProgress() : vMore();
+    const tabs = [['home', 'Сегодня'], ['quran', 'Коран'], ['zikr', 'Зикр'], ['progress', 'Прогресс'], ['more', 'Ещё']];
     $('#tabbar').innerHTML = onb || reader || !S.loaded ? '' : '<nav aria-label="Разделы">' + tabs.map((t) => '<button data-a="tab" data-v="' + t[0] + '"' + (S.tab === t[0] ? ' aria-current="page"' : '') + '>' + I.tab[t[0]] + '<span>' + t[1] + '</span></button>').join('') + '</nav>';
-    $('#overlay').innerHTML = vSheet() + (S.toast ? '<div class="toast" role="status">' + esc(S.toast) + '</div>' : '');
+    // шторка выезжает один раз — при открытии; перерисовка внутри неё не повторяет анимацию
+    const sheetId = S.sheet ? S.sheet.type + ':' + (S.sheet.id || '') : '';
+    const sheetEnter = !!sheetId && sheetId !== lastSheet;
+    const oldSheet = document.querySelector('#overlay .sheet'), keepTop = !sheetEnter && oldSheet ? oldSheet.scrollTop : 0;
+    lastSheet = sheetId;
+    $('#overlay').innerHTML = vSheet(sheetEnter) + (S.toast ? '<div class="toast" role="status">' + esc(S.toast) + '</div>' : '');
+    if (keepTop) { const ns = document.querySelector('#overlay .sheet'); if (ns) ns.scrollTop = keepTop; }
     syncBackButton();
   }
   function syncBackButton() {
@@ -2203,7 +2290,8 @@
     tab(v) { const sub = v.split(':'); v = sub[0]; if (sub[1]) S.prog.period = sub[1]; if (S.tab === v && v === 'quran') S.quran.reader = null; S.tab = v; S.sheet = null; render(); $('#scroll').scrollTop = 0; },
     zikr(v) { S.zView = v; S.tab = 'zikr'; render(); $('#scroll').scrollTop = 0; },
     cycleDay() { const k = viewKey(), d = ensureDay(k); d.t = { n: 't', t: 's', s: 'n' }[d.t]; saveDay(k); haptic('select'); render(); },
-    mode(v) { S.set.detailed = v === '1'; saveSettings(); render(); },
+    todayAll() { S.set.todayAll = !S.set.todayAll; saveSettings(); render(); },
+    mode(v) { S.set.detailed = v === '1'; saveSettings(); if (S.sheet && S.sheet.type === 'mode') S.sheet = null; haptic('select'); render(); },
     quick(id) { const k = viewKey(), d = ensureDay(k); if (d.f[id] && d.f[id] !== 'missed') delete d.f[id]; else d.f[id] = (id === 'dhuhr' && isFriday(k) && S.set.level !== 'start') ? 'juma' : 'done'; saveDay(k); const on = !!d.f[id]; haptic(on ? 'notify' : 'impact', on ? 'success' : 'light'); render(); if (on) celebrate(id); },
     sunna(key) { const k = viewKey(), d = ensureDay(k); if (d.s[key]) delete d.s[key]; else d.s[key] = 1; saveDay(k); haptic('select'); render(); },
     step(v) { const p = v.split(':'), key = p[0], delta = +p[1], cap = +p[2]; const k = viewKey(), d = ensureDay(k); const f = key === 'qiyam' ? 'q' : 'w'; d[f] = clamp((d[f] || 0) + delta, 0, cap); saveDay(k); haptic('select'); render(); },
@@ -2460,6 +2548,35 @@
       const btn = document.querySelector('.tfa-nav [aria-label="' + (dx < 0 ? 'Следующий аят' : 'Предыдущий аят') + '"]');
       if (btn && !btn.disabled) btn.click();
     }, { passive: true });
+    // шторку можно смахнуть вниз, когда она прокручена к началу
+    let dg = null;
+    const ov = $('#overlay');
+    ov.addEventListener('touchstart', (e) => {
+      const sh = e.target.closest && e.target.closest('.sheet');
+      dg = sh && e.touches.length === 1 && !e.target.closest('input, textarea, .rs-steps') ? { sh, y0: e.touches[0].clientY, x0: e.touches[0].clientX, top: sh.scrollTop, dy: 0, on: false, t0: Date.now() } : null;
+    }, { passive: true });
+    ov.addEventListener('touchmove', (e) => {
+      if (!dg) return;
+      const dy = e.touches[0].clientY - dg.y0, dx = e.touches[0].clientX - dg.x0;
+      if (!dg.on) {
+        if (Math.abs(dy) < 8 && Math.abs(dx) < 8) return;
+        if (dy <= 0 || dg.top > 0 || dg.sh.scrollTop > 0 || Math.abs(dx) > Math.abs(dy)) { dg = null; return; }
+        dg.on = true; dg.y0 = e.touches[0].clientY;
+      }
+      dg.dy = Math.max(0, e.touches[0].clientY - dg.y0);
+      dg.sh.style.transform = 'translateY(' + dg.dy + 'px)';
+      if (e.cancelable) e.preventDefault();
+    }, { passive: false });
+    ov.addEventListener('touchend', () => {
+      if (!dg || !dg.on) { dg = null; return; }
+      const sh = dg.sh, fast = dg.dy > 40 && dg.dy / Math.max(1, Date.now() - dg.t0) > 0.5;
+      sh.classList.add('snap');
+      if (dg.dy > 110 || fast) { sh.style.transform = 'translateY(110%)'; haptic('impact', 'light'); setTimeout(() => { S.sheet = null; render(); }, 200); }
+      else { sh.style.transform = ''; setTimeout(() => sh.classList.remove('snap'), 260); }
+      dg = null;
+    }, { passive: true });
+    // «Настройки» в меню Telegram ведут в «Ещё»
+    try { if (tg && tg.SettingsButton && ver('7.0')) { tg.SettingsButton.show(); tg.SettingsButton.onClick(() => { S.sheet = null; S.quran.reader = null; S.tab = 'more'; render(); $('#scroll').scrollTop = 0; }); } } catch (e) {}
     if (canSync()) syncNow(true);
     setTimeout(gamStart, 500);
     let lastVisibleSync = Date.now();
