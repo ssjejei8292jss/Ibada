@@ -819,7 +819,8 @@
      Арабский текст и шрифт — Комплекс короля Фахда (KFGQPC HAFS Uthmanic Script, версия 18): лежат в самом приложении (quran/, fonts/).
      Текст сверен с двумя независимыми наборами (Kh. Hosny и «Академия Корана») — совпадение по буквам во всех 6 236 аятах.
      Перевод смыслов — Э. Кулиев (api.alquran.cloud, сохраняется на телефоне). Толкование — ас-Саади (блок «тафсир»). */
-  const RD_DEF = { bg: 'night', fs: 3, as: 3, font: 'book', ar: true, ru: true, auto: true, full: true };
+  const RD_DEF = { bg: 'night', fs: 3, as: 3, font: 'book', ar: true, ru: true, auto: true, full: true, lay: 'book', tap: 'act' };
+  const tapTafsir = (R) => R && R.mode !== 'tf' && rd().tap === 'tf' && !!sai(); // нажатие на аят сразу открывает толкование
   const RD_FS = [15, 16.5, 18, 20, 22.5], RD_AS = [24, 27, 30, 34, 38];
   const RD_BG = { night: ['Ночь', '#0C1120'], sepia: ['Сепия', '#F3EBDC'], day: ['День', '#FBFAF7'], sky: ['Небо', ''] };
   const rd = () => Object.assign({}, RD_DEF, S.set.rd || {});
@@ -831,7 +832,8 @@
     left: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 6-6 6 6 6"/></svg>',
     right: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>',
     copy: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></svg>',
-    share: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>'
+    share: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 8l5-5 5 5"/><path d="M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>',
+    more: '<svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.9"/><circle cx="12" cy="12" r="1.9"/><circle cx="19" cy="12" r="1.9"/></svg>'
   };
   const STAR = (n) => '<span class="star">' + I.star8 + '<span style="position:relative">' + n + '</span></span>';
   function juzOf(s, a) { let j = 1; for (let i = 0; i < D.JUZ_START.length; i++) { const x = D.JUZ_START[i]; if (x[0] < s || (x[0] === s && x[1] <= a)) j = i + 1; else break; } return j; }
@@ -933,7 +935,7 @@
   const qRuNote = (R) => rd().ru && !R.ru ? '<div class="qnote">Перевод загрузится, когда появится интернет. Пока — только арабский текст.</div>' : '';
   function qAyah(R, a, showAr, showRu, marks) {
     const s = R.s, on = marks.indexOf(s + ':' + a) >= 0;
-    return '<div class="qa' + (R.sel === a ? ' sel' : '') + '" id="ay' + a + '" data-ay="' + a + '" data-a="qSel" data-v="' + a + '" data-nohap><div class="qa-top"><span class="qa-n' + (a > 99 ? ' n3' : '') + '">' + STAR(a) + (on ? '<span class="qa-bm" aria-label="В закладках">' + I.bookmarkOn + '</span>' : '') + '</span>' +
+    return '<div class="qa' + (R.sel === a ? ' sel' : '') + '" id="ay' + a + '" data-ay="' + a + '" data-a="qSel" data-v="' + a + '" data-nohap><div class="qa-top"><span class="qa-n' + (a > 99 ? ' n3' : '') + '">' + STAR(a) + (on ? '<span class="qa-bm" aria-label="В закладках">' + I.bookmarkOn + '</span>' : '') + (rd().lay === 'cards' || tapTafsir(R) ? '<button class="qa-more" data-a="qAct" data-v="' + a + '" aria-label="Действия с аятом ' + a + '">' + QI.more + '</button>' : '') + '</span>' +
       (showAr ? '<p class="qar" lang="ar" dir="rtl">' + esc(arNoNum(R.ar[a - 1])) + '</p>' : '') + '</div>' + (showRu ? '<p class="qru">' + esc(R.ru[a - 1] || '') + '</p>' : '') + '</div>';
   }
   function vTransl(R) {
@@ -1006,6 +1008,8 @@
     return head('Чтение', 'Как выглядит текст Корана, перевода и толкования') +
       steps('fs', 'Размер текста', 'А', 'var(--book)') + steps('as', 'Арабский текст', 'ع', 'var(--quran)') +
       '<div class="rs-row"><span class="rs-l">Фон для чтения</span><div class="rs-bgs" role="group" aria-label="Фон для чтения">' + Object.keys(RD_BG).map((k) => '<button class="rs-bg' + (r.bg === k ? ' on' : '') + '" data-a="rdSet" data-v="bg:' + k + '" aria-pressed="' + (r.bg === k) + '"><span class="rs-swatch sw-' + k + '">Аа</span>' + RD_BG[k][0] + '</button>').join('') + '</div></div>' +
+      '<div class="rs-row"><span class="rs-l">Вид страницы</span>' + seg('lay', [['book', 'Книга'], ['cards', 'Карточки']]) + '<span class="small sub" style="line-height:1.45;padding:0 2px">' + (r.lay === 'cards' ? 'Каждый аят — в своей карточке, перевод в отдельной рамке, как в «Академии Корана».' : 'Сплошной текст, как страница книги.') + '</span></div>' +
+      (sai() ? '<div class="rs-row"><span class="rs-l">Нажатие на аят</span>' + seg('tap', [['act', 'Действия'], ['tf', 'Сразу толкование']]) + '<span class="small sub" style="line-height:1.45;padding:0 2px">' + (r.tap === 'tf' ? 'Листаете перевод, нажимаете на аят — открывается его толкование. Закладка, копирование и «поделиться» — под кнопкой «⋯» у номера аята.' : 'Нажатие на аят открывает панель: толкование, закладка, копировать, поделиться.') + '</span></div>' : '') +
       '<div class="rs-row"><span class="rs-l">Шрифт перевода и толкования</span>' + seg('font', [['book', '<span style="font-family:var(--book)">Книжный</span>'], ['plain', 'Простой']]) + '</div>' +
       '<div class="rs-box">' + sw('ar', 'Арабский текст аята') + sw('ru', 'Перевод аята') + (fsSupported() ? sw('full', 'Полный экран при чтении') : '') + '</div>' +
       (sai() ? '<div class="rs-row"><span class="rs-l">Прочитанное по плану тафсира</span>' + seg('auto', [[1, 'Само, по ходу чтения'], [0, 'Кнопкой']]) + '<span class="small sub" style="line-height:1.45;padding:0 2px">' + (r.auto ? 'Страницы засчитываются, когда вы дочитали толкование до конца. Если быстро пролистать или открыть другую суру — не считается.' : 'Отмечайте «Прочитал до сюда» под толкованием или галочкой внизу экрана.') + '</span></div>' : '') +
@@ -1030,8 +1034,8 @@
     return head + (q.length ? '<div class="tfa-q">' + q.join('') + '</div>' : '') +
       '<div class="tfa-b">' + (g.text ? tfParas(tfTypo(g.text)).map((p) => '<p>' + esc(p) + '</p>').join('') : '<p class="sub">К этому аяту отдельного толкования нет.</p>') + '</div>' +
       '<div class="tfa-f"><button class="qp-b" data-a="qMark" data-v="' + sh.a + '" aria-label="' + (on ? 'Убрать закладку' : 'В закладки') + '" aria-pressed="' + on + '">' + (on ? I.bookmarkOn : I.bookmark) + '</button>' +
-      '<div class="tfa-nav"><button class="qp-b" data-a="tfaNav" data-v="' + (k > 0 ? G[k - 1].f : 0) + '"' + (k > 0 ? '' : ' disabled') + ' aria-label="Предыдущий аят">' + QI.left + '</button><span>' + (g.t > g.f ? 'Аяты ' + g.f + '–' + g.t : 'Аят ' + g.f) + ' из ' + D.SURAH_AYAHS[s - 1] + '</span><button class="qp-b qp-ok" data-a="tfaNav" data-v="' + (k < G.length - 1 ? G[k + 1].f : 0) + '"' + (k < G.length - 1 ? '' : ' disabled') + ' aria-label="Следующий аят">' + QI.right + '</button></div>' +
-      '<button class="qp-b" data-a="qShare" data-v="' + sh.a + '" aria-label="Поделиться">' + QI.share + '</button></div>';
+      '<div class="tfa-nav"><button class="qp-b" data-a="tfaNav" data-v="' + (k > 0 ? G[k - 1].f : 0) + '"' + (k > 0 ? '' : ' disabled') + ' aria-label="Предыдущий аят">' + QI.left + '</button><span class="tfa-n">' + (g.t > g.f ? 'Аяты ' + g.f + '–' + g.t : 'Аят ' + g.f + ' из ' + D.SURAH_AYAHS[s - 1]) + '</span><button class="qp-b qp-ok" data-a="tfaNav" data-v="' + (k < G.length - 1 ? G[k + 1].f : 0) + '"' + (k < G.length - 1 ? '' : ' disabled') + ' aria-label="Следующий аят">' + QI.right + '</button></div>' +
+      '<button class="qp-b" data-a="qCopy" data-v="' + sh.a + '" aria-label="Копировать">' + QI.copy + '</button><button class="qp-b" data-a="qShare" data-v="' + sh.a + '" aria-label="Поделиться">' + QI.share + '</button></div>';
   }
 
   /* ----- режим чтения: фон, полный экран, прокрутка ----- */
@@ -1049,6 +1053,7 @@
     b.classList.toggle('reading', on);
     Object.keys(RD_BG).forEach((k) => b.classList.toggle('rbg-' + k, on && r.bg === k));
     b.classList.toggle('rplain', on && r.font === 'plain');
+    b.classList.toggle('rcards', on && r.lay === 'cards');
     if (on) { b.style.setProperty('--rfs', RD_FS[r.fs - 1] + 'px'); b.style.setProperty('--ras', RD_AS[r.as - 1] + 'px'); }
     if (on !== readingOn) { readingOn = on; fullscreen(on && r.full); if (!on) S.quran.hid = false; }
   }
@@ -2006,7 +2011,7 @@
       const k = viewKey(), cur = getDay(k).p, fi = fastingInfo(k);
       body = head('Пост · ' + fmtDate(k), fi ? fi.text : 'Обычный день') + [['fast', 'Постился', 'Добровольный или обязательный пост'], ['qada', 'Каза поста', 'Восполнил пропущенный день Рамадана'], ['missed', 'Пропустил', 'Пропущенный день Рамадана — станет долгом']].map((o) => opt('setFast', o[0], cur === o[0], o[1], o[2])).join('') + (cur ? '<button class="btn block" data-a="setFast" data-v="" style="background:none;color:var(--sub);font-size:14px">Снять отметку</button>' : '');
     }
-    return '<button class="scrim" data-a="closeSheet" aria-label="Закрыть"></button><div class="sheet' + (sh.type === 'tfa' || sh.type === 'qnav' ? ' sh-tall' : '') + '" role="dialog" aria-modal="true">' + body + '</div>';
+    return '<button class="scrim" data-a="closeSheet" aria-label="Закрыть"></button><div class="sheet' + (sh.type === 'tfa' ? ' sh-tall sh-tfa' : sh.type === 'qnav' ? ' sh-tall' : '') + '" role="dialog" aria-modal="true">' + body + '</div>';
   }
 
   /* ===== отрисовка ===== */
@@ -2301,12 +2306,17 @@
     qNavView(v) { if (S.sheet) S.sheet.view = v; S.quran.filter = ''; render(); },
     qSel(v) {
       const R = S.quran.reader; if (!R) return;
+      if (+v && tapTafsir(R)) { R.sel = 0; haptic('select'); S.sheet = { type: 'tfa', s: R.s, a: +v }; render(); return; }
+      A.qAct(v);
+    },
+    qAct(v) {
+      const R = S.quran.reader; if (!R) return;
       const a = +v; R.sel = a && R.sel !== a ? a : 0; haptic('select'); render();
       const el = R.sel && document.getElementById('ay' + R.sel), tool = document.querySelector('.qtool');
       if (el && tool) { const over = el.getBoundingClientRect().bottom - tool.getBoundingClientRect().top + 12; if (over > 0) { rdJump = Date.now(); $('#scroll').scrollBy({ top: Math.min(over, Math.max(0, el.getBoundingClientRect().top - hdrBottom() - 8)), behavior: REDUCE ? 'auto' : 'smooth' }); } }
     },
     qMark(v) { const R = S.quran.reader, s = S.sheet && S.sheet.type === 'tfa' ? S.sheet.s : R && R.s; if (!s || !+v) return; const key = s + ':' + (+v), m = S.set.qmarks || [], i = m.indexOf(key); if (i >= 0) m.splice(i, 1); else m.unshift(key); S.set.qmarks = m.slice(0, 100); saveSettings(); haptic('select'); toast(i >= 0 ? 'Закладка убрана' : 'Добавлено в закладки'); },
-    qCopy(v) { const R = S.quran.reader; if (!R) return; R.sel = 0; copyText(qAyahText(R.s, +v)); },
+    qCopy(v) { const R = S.quran.reader, s = S.sheet && S.sheet.type === 'tfa' ? S.sheet.s : R && R.s; if (!s) return; if (R) R.sel = 0; copyText(qAyahText(s, +v)); },
     qShare(v) {
       const R = S.quran.reader, s = S.sheet && S.sheet.type === 'tfa' ? S.sheet.s : R && R.s; if (!s) return;
       const a = +v, text = qAyahText(s, a);
@@ -2334,6 +2344,8 @@
       else if (k === 'ar' || k === 'ru' || k === 'auto' || k === 'full') r[k] = x === '1';
       else if (k === 'bg' && RD_BG[x]) r.bg = x;
       else if (k === 'font') r.font = x === 'plain' ? 'plain' : 'book';
+      else if (k === 'lay') r.lay = x === 'cards' ? 'cards' : 'book';
+      else if (k === 'tap') r.tap = x === 'tf' ? 'tf' : 'act';
       else return;
       const eff = Object.assign({}, RD_DEF, r);
       if (!eff.ar && !eff.ru) { if (k === 'ar') r.ru = true; else r.ar = true; }
@@ -2438,6 +2450,16 @@
     render();
     $('#scroll').addEventListener('scroll', onReaderScroll, { passive: true });
     setInterval(tfTick, 1000);
+    // толкование одного аята: свайп влево — следующий аят, вправо — предыдущий
+    let swX = 0, swY = 0, swOn = false;
+    document.addEventListener('touchstart', (e) => { swOn = !!(e.target.closest && e.target.closest('.sh-tfa')); if (swOn) { swX = e.touches[0].clientX; swY = e.touches[0].clientY; } }, { passive: true });
+    document.addEventListener('touchend', (e) => {
+      if (!swOn) return; swOn = false;
+      const t = e.changedTouches[0], dx = t.clientX - swX, dy = t.clientY - swY;
+      if (Math.abs(dx) < 70 || Math.abs(dy) > 50) return;
+      const btn = document.querySelector('.tfa-nav [aria-label="' + (dx < 0 ? 'Следующий аят' : 'Предыдущий аят') + '"]');
+      if (btn && !btn.disabled) btn.click();
+    }, { passive: true });
     if (canSync()) syncNow(true);
     setTimeout(gamStart, 500);
     let lastVisibleSync = Date.now();
