@@ -58,7 +58,7 @@
   /* ===== состояние ===== */
   const DEFAULT_SET = { level: '', lat: null, lng: null, city: '', tz: '', method: 'MuslimWorldLeague', madhab: 'Shafi', hijriAdj: 0, theme: 'auto', qadaBase: 0, fastBase: 0, detailed: true, qlast: null, qmarks: [],
     syncUrl: '', lastSync: 0, pending: [],
-    tadj: {}, iq: {}, vib: true, vibT: 'medium',
+    tadj: {}, iq: {}, vib: true, vibT: 'medium', sky: 'live',
     remind: { before: true, offset: 15, target: 'adhan', unmarked: true, azkar: true, fast: true, summary: true, summaryTime: '21:30' } };
   const S = {
     set: Object.assign({}, DEFAULT_SET),
@@ -240,7 +240,7 @@
   function encodeDay(d) {
     const f = PRAYERS.map((p) => F_CODE[d.f[p.id]] || '-').join('');
     const s = SUNNA_KEYS.map((k) => (d.s[k] ? '1' : '0')).join('');
-    return [d.t + f + s, d.q || 0, d.w || 0, (d.am || []).join('.'), (d.ae || []).join('.'), (d.z || []).join('.'), P_CODE[d.p] || ''].join('|');
+    return [d.t + f + s, d.q || 0, d.w || 0, (d.am || []).join('.'), (d.ae || []).join('.'), (d.z || []).join('.'), P_CODE[d.p] || '', d.u ? Math.round(d.u / 1000).toString(36) : ''].join('|');
   }
   function decodeDay(str) {
     const d = blankDay();
@@ -254,6 +254,7 @@
       const nums = (s) => (s ? s.split('.').map((x) => +x || 0) : []);
       d.am = nums(parts[3]); d.ae = nums(parts[4]); d.z = nums(parts[5]);
       d.p = P_DECODE[parts[6]] || '';
+      d.u = parts[7] ? (parseInt(parts[7], 36) || 0) * 1000 : 0; // когда день последний раз меняли (для слияния между устройствами)
     } catch (e) {}
     return d;
   }
@@ -305,7 +306,7 @@
     cloud: inTelegram && tg.CloudStorage && ver('6.9'),
     get(keys) {
       return new Promise((res) => {
-        if (this.cloud) { tg.CloudStorage.getItems(keys, (err, vals) => res(err ? {} : (vals || {}))); return; }
+        if (this.cloud) { try { tg.CloudStorage.getItems(keys, (err, vals) => res(err ? null : (vals || {}))); } catch (e) { res(null); } return; }
         const o = {}; keys.forEach((k) => { try { const v = localStorage.getItem('ibada:' + k); if (v != null) o[k] = v; } catch (e) {} }); res(o);
       });
     },
@@ -317,43 +318,117 @@
     },
     set(key, val) {
       return new Promise((res) => {
-        if (this.cloud) { tg.CloudStorage.setItem(key, val, () => res()); return; }
-        try { localStorage.setItem('ibada:' + key, val); } catch (e) {} res();
+        if (this.cloud) { try { tg.CloudStorage.setItem(key, val, (err, ok) => res(!err && ok !== false)); } catch (e) { res(false); } return; }
+        try { localStorage.setItem('ibada:' + key, val); res(true); } catch (e) { res(false); }
       });
     }
   };
   const dirty = {};
-  let saveTimer = null;
-  function saveLocal(k) { dirty[halfKey(k)] = true; dataVer++; schedule(); gamCheckSoon(); }
+  let saveTimer = null, firstDirty = 0, flushing = null, saveFails = 0;
+  function saveLocal(k, slow) { dirty[halfKey(k)] = true; dataVer++; schedule(slow ? 1500 : 350); gamCheckSoon(); }
   function saveGam() { dirty.gam = true; schedule(); }
-  function saveDay(k) { saveLocal(k); markPending(k); }
+  const nowSec = () => Math.round(Date.now() / 1000) * 1000;
+  function saveDay(k, slow) { const d = S.days[k]; if (d) d.u = nowSec(); saveLocal(k, slow); markPending(k); }
   function saveSettings() { dirty.settings = true; schedule(); }
   function resched() { if (!S.set.syncUrl || !inTelegram) return; clearTimeout(sync.timer); sync.timer = setTimeout(() => syncNow(false), 1500); }
   function timesChanged() { saveSettings(); render(); resched(); }
-  function schedule() { clearTimeout(saveTimer); saveTimer = setTimeout(flush, 350); }
-  function flush() {
-    Object.keys(dirty).forEach((hk) => {
-      delete dirty[hk];
-      if (hk === 'settings') { store.set('settings', JSON.stringify(S.set)); return; }
-      if (hk === 'gam') { store.set('gam', JSON.stringify(S.gam)); return; }
-      if (hk === 'read') { store.set('read', S.read ? JSON.stringify(S.read) : ''); return; }
-      const prefix = hk.slice(2, 8), half = hk.slice(9);
-      const obj = {};
-      Object.keys(S.days).forEach((k) => {
-        if (k.slice(0, 6) !== prefix) return;
-        const dd = +k.slice(6, 8);
-        if ((half === '1') !== (dd <= 15)) return;
-        if (!isEmptyDay(S.days[k])) obj[k.slice(6, 8)] = encodeDay(S.days[k]);
-      });
-      store.set(hk, JSON.stringify(obj));
+  // Сохранение не чаще раза в ~1,5 с во время тасбиха, но не реже раза в 5 с, и сразу при сворачивании
+  function schedule(ms) {
+    if (!firstDirty) firstDirty = Date.now();
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(flush, Math.max(0, Math.min(ms || 350, 5000 - (Date.now() - firstDirty))));
+  }
+  function halfObj(hk) {
+    const prefix = hk.slice(2, 8), half = hk.slice(9), obj = {};
+    Object.keys(S.days).forEach((k) => {
+      if (k.slice(0, 6) !== prefix) return;
+      const dd = +k.slice(6, 8);
+      if ((half === '1') !== (dd <= 15)) return;
+      if (!isEmptyDay(S.days[k])) obj[k.slice(6, 8)] = encodeDay(S.days[k]);
     });
+    return obj;
+  }
+  /* Слияние с облаком (несколько устройств). У дня есть u — когда его меняли, и b — какую версию из облака мы видели последней.
+     Облако не менялось с тех пор (u ≤ b) — оставляем своё. Менялось только в облаке — берём облачное.
+     Менялось и там, и здесь — объединяем отметки: статусы и галочки складываются, счётчики (зикры, азкары) берутся большими. */
+  function unionDay(a, c) {
+    const d = { t: a.t !== 'n' ? a.t : c.t, f: Object.assign({}, c.f, a.f), s: Object.assign({}, c.s, a.s), q: Math.max(a.q || 0, c.q || 0), w: Math.max(a.w || 0, c.w || 0), p: a.p || c.p || '' };
+    ['am', 'ae', 'z'].forEach((f) => { const x = a[f] || [], y = c[f] || []; d[f] = Array.from({ length: Math.max(x.length, y.length) }, (_, i) => Math.max(x[i] || 0, y[i] || 0)); });
+    d.u = Math.max(a.u || 0, c.u || 0); d.b = c.u || 0;
+    return d;
+  }
+  function adoptNewer(hk, raw) {
+    let obj = {}, changed = false;
+    try { obj = raw ? JSON.parse(raw) || {} : {}; } catch (e) { return false; }
+    const prefix = hk.slice(2, 8);
+    Object.keys(obj).forEach((dd) => {
+      const k = prefix + dd, cd = decodeDay(obj[dd]), ld = S.days[k];
+      cd.b = cd.u || 0;
+      if (!ld) { S.days[k] = cd; changed = true; return; }
+      if ((cd.u || 0) <= (ld.b || 0)) return;                       // в облаке ничего нового
+      if ((ld.u || 0) <= (ld.b || 0)) { S.days[k] = cd; changed = true; return; } // здесь ничего не меняли
+      S.days[k] = unionDay(ld, cd); changed = true;                  // меняли в обоих местах
+    });
+    return changed;
+  }
+  async function flush(fast) {
+    clearTimeout(saveTimer); firstDirty = 0;
+    if (flushing) { try { await flushing; } catch (e) {} }
+    const keys = Object.keys(dirty);
+    if (!keys.length) return;
+    keys.forEach((hk) => { delete dirty[hk]; });
+    let adopted = false, failed = false;
+    flushing = (async () => {
+      for (const hk of keys) {
+        let ok;
+        if (hk === 'settings') ok = await store.set('settings', JSON.stringify(S.set));
+        else if (hk === 'gam') ok = await store.set('gam', JSON.stringify(S.gam));
+        else if (hk === 'read') ok = await store.set('read', S.read ? JSON.stringify(S.read) : '');
+        else {
+          if (!fast) {
+            const cur = await store.get([hk]);
+            if (cur === null) { dirty[hk] = true; failed = true; continue; } // облако не ответило — не пишем вслепую
+            if (adoptNewer(hk, cur[hk])) adopted = true;
+          }
+          const ho = halfObj(hk);
+          ok = await store.set(hk, JSON.stringify(ho));
+          if (ok) Object.keys(ho).forEach((dd) => { const d = S.days[hk.slice(2, 8) + dd]; if (d) d.b = d.u || 0; });
+        }
+        if (!ok) { dirty[hk] = true; failed = true; }
+      }
+    })();
+    try { await flushing; } finally { flushing = null; }
+    if (failed) {
+      saveFails++;
+      if (saveFails === 3) toast('Облако Telegram не отвечает — сохраню, когда появится связь');
+      clearTimeout(saveTimer); saveTimer = setTimeout(flush, Math.min(30000, 1500 * saveFails));
+    } else saveFails = 0;
+    if (adopted) { dataVer++; render(); }
+  }
+  // При возвращении в приложение подтягиваем изменения, сделанные на другом устройстве
+  async function refreshFromCloud() {
+    if (!S.loaded) return;
+    const t = todayKey(), recent = [halfKey(t), halfKey(addDays(t, -16)), halfKey(addDays(t, -32))];
+    const vals = await store.get(recent.concat(['read', 'settings']));
+    if (!vals) return;
+    let changed = false;
+    recent.forEach((hk) => { if (vals[hk] && adoptNewer(hk, vals[hk])) changed = true; });
+    if (vals.read) { try { const r = JSON.parse(vals.read); if (r && (!S.read || (r.u || 0) > (S.read.u || 0))) { S.read = r; changed = true; } } catch (e) {} }
+    if (vals.settings) { try { const cs = JSON.parse(vals.settings); (cs.pending || []).forEach((k) => { const p = S.set.pending || (S.set.pending = []); if (p.indexOf(k) < 0) p.push(k); }); } catch (e) {} }
+    if (changed) { dataVer++; render(); }
   }
   async function loadAll() {
     try {
-      const ks = await store.keys();
+      let ks = await store.keys();
+      if (!ks.length) { await new Promise((r) => setTimeout(r, 600)); ks = await store.keys(); }
       const want = ks.filter((k) => k === 'settings' || k === 'gam' || k === 'read' || k.indexOf('h_') === 0);
       const vals = {};
-      for (let i = 0; i < want.length; i += 50) Object.assign(vals, await store.get(want.slice(i, i + 50)));
+      for (let i = 0; i < want.length; i += 50) {
+        let part = await store.get(want.slice(i, i + 50));
+        for (let a = 0; part === null && a < 3; a++) { await new Promise((r) => setTimeout(r, 800 * (a + 1))); part = await store.get(want.slice(i, i + 50)); }
+        if (part === null) { S.loadFailed = true; continue; }
+        Object.assign(vals, part);
+      }
       if (vals.settings) { try { S.set = Object.assign({}, DEFAULT_SET, JSON.parse(vals.settings)); } catch (e) {} }
       if (vals.read) { try { S.read = JSON.parse(vals.read) || null; } catch (e) {} }
       if (vals.gam) { try { S.gam = Object.assign({}, S.gam, JSON.parse(vals.gam)); S.gam.seen = S.gam.seen || {}; } catch (e) {} }
@@ -361,7 +436,7 @@
         if (hk.indexOf('h_') !== 0) return;
         let obj = {}; try { obj = JSON.parse(vals[hk]) || {}; } catch (e) {}
         const prefix = hk.slice(2, 8);
-        Object.keys(obj).forEach((dd) => { S.days[prefix + dd] = decodeDay(obj[dd]); });
+        Object.keys(obj).forEach((dd) => { const d = decodeDay(obj[dd]); d.b = d.u || 0; S.days[prefix + dd] = d; });
       });
     } catch (e) {}
   }
@@ -375,9 +450,8 @@
   function markPending(k) {
     if (!S.set.syncUrl || k < SYNC_FIRST || k > SYNC_LAST) return;
     const p = S.set.pending || (S.set.pending = []);
-    if (p.indexOf(k) < 0) p.push(k);
+    if (p.indexOf(k) < 0) { p.push(k); saveSettings(); }
     sync.ver[k] = (sync.ver[k] || 0) + 1;
-    saveSettings();
     clearTimeout(sync.timer); sync.timer = setTimeout(() => syncNow(false), 2500);
   }
   function tzOffsetMs(date) {
@@ -408,7 +482,7 @@
     } finally { clearTimeout(to); }
   }
   function mergeDay(k, sd, union) {
-    const d = ensureDay(k);
+    const d = ensureDay(k), before = encodeDay(Object.assign({}, d, { u: 0 }));
     if (union) {
       if (d.t === 'n' && sd.t !== 'n') d.t = sd.t;
       PRAYERS.forEach((p) => { if (!d.f[p.id] && sd.f[p.id]) d.f[p.id] = sd.f[p.id]; });
@@ -426,7 +500,7 @@
     }
     if (sd.am && !azDone(d, 'morning')) d.am = D.AZKAR.morning.map((a) => a.n);
     if (sd.ae && !azDone(d, 'evening')) d.ae = D.AZKAR.evening.map((a) => a.n);
-    saveLocal(k);
+    if (encodeDay(Object.assign({}, d, { u: 0 })) !== before) { d.u = nowSec(); saveLocal(k); }
   }
   async function syncNow(withPull) {
     if (!canSync() || sync.busy) return;
@@ -462,6 +536,7 @@
         }
         S.set.lastSync = Date.now();
         sync.status = 'ok';
+        if ((S.set.pending || []).length) { clearTimeout(sync.timer); sync.timer = setTimeout(() => syncNow(false), 3000); }
       }
     } catch (e) {
       sync.status = 'Нет связи с таблицей. Проверьте адрес и интернет.';
@@ -820,6 +895,18 @@
     const tot = Object.keys(cnt).reduce((a, x) => a + cnt[x], 0);
     out.push('<h2 class="h2" style="padding:0 4px">Фард-намазы</h2><div class="tiles3">' + [['mosque', 'В мечети', 'var(--gold)'], ['jamaat', 'Джамаатом', 'var(--blue)'], ['done', 'Сделал', 'var(--emerald)'], ['qada', 'Каза', 'var(--amber)'], ['missed', 'Пропущено', 'var(--red)']].map((x) => '<div class="stat"><b class="num">' + cnt[x[0]] + '</b><span class="row small sub" style="gap:6px;font-weight:700"><span class="dot" style="background:' + x[2] + '"></span>' + x[1] + '</span></div>').join('') +
       '<div class="stat" style="background:var(--gold-soft);border-color:var(--gold-line)"><b class="num" style="color:var(--gold-hi)">' + (tot ? Math.round((cnt.mosque + cnt.jamaat) / tot * 100) + '%' : '—') + '</b><span class="small" style="font-weight:700;color:var(--gold-hi)">джамаатом</span></div></div>');
+    // азкары утром и вечером за период: сколько из возможных (считаем с первого дня, когда вы начали отмечать)
+    if (lvl !== 'start') {
+      const firstK = Object.keys(S.days).filter((k) => !isEmptyDay(S.days[k])).sort()[0];
+      const span = firstK ? past.filter((k) => k >= firstK) : [];
+      const n = span.length;
+      const m = span.filter((k) => S.days[k] && azDone(S.days[k], 'morning')).length;
+      const e = span.filter((k) => S.days[k] && azDone(S.days[k], 'evening')).length;
+      const pc = (a, b) => (b ? Math.round(a / b * 100) : 0);
+      const row = (label, got, of, color, strong) => '<div style="display:flex;flex-direction:column;gap:8px;padding:13px 16px"><div class="between"><span style="font-size:' + (strong ? 15 : 14) + 'px;font-weight:' + (strong ? 800 : 700) + '">' + label + '</span><span class="num" style="font-size:14px;font-weight:800"><span class="sub" style="font-weight:700">' + got + ' из ' + of + ' · </span>' + pc(got, of) + '%</span></div><span class="bar" style="height:6px"><span style="width:' + pc(got, of) + '%;background:' + color + '"></span></span></div>';
+      if (n) out.push('<h2 class="h2" style="padding:0 4px">Азкары утром и вечером</h2><div class="card list">' + row('Утренние', m, n, 'var(--gold)') + row('Вечерние', e, n, 'var(--blue)') + row('Всего', m + e, n * 2, 'var(--emerald)', true) + '</div>' +
+        (firstK > past[0] ? '<div class="small sub on-sky" style="padding:0 6px;margin-top:-4px">Считаются дни с ' + fmtDate(firstK) + ' — с начала ваших отметок</div>' : ''));
+    }
     const st = [[streak((d) => PRAYERS.every((p) => ON_TIME[d.f[p.id]])), 'Все фарды в своё время']];
     if (lvl !== 'start') st.push([streak((d) => azDone(d, 'morning')), 'Утренние азкары'], [streak((d) => D.ZIKRS.every((z, i) => (d.z[i] || 0) >= 100)), 'Все зикры по 100']);
     st.push([streak((d) => PRAYERS.some((p) => d.f[p.id] === 'mosque' || d.f[p.id] === 'juma')), 'Хотя бы один намаз в мечети']);
@@ -1156,7 +1243,7 @@
     const planned = Math.min(total, Math.round(total * Math.min(di, R.days) / R.days));
     return { R, total, pos, posStart, di, end, base, norm, left: Math.max(0, norm - readToday), readToday, planned, ahead: pos - planned, done: pos >= total, over: di > R.days };
   }
-  function saveRead() { dirty.read = true; dataVer++; schedule(); gamCheckSoon(); }
+  function saveRead() { if (S.read) S.read.u = nowSec(); dirty.read = true; dataVer++; schedule(); gamCheckSoon(); }
   function readApply(delta) {
     const R = S.read, st = rState();
     if (!R || !st || st.before) { toast('План начнётся ' + fmtDate(R.start)); return; }
@@ -1266,6 +1353,7 @@
       ['times', 'Поправки и икама', (() => { const a = Object.keys(S.set.tadj || {}).some((x) => +S.set.tadj[x]); const q = hasIqama(); return a && q ? 'Поправки · икама' : a ? 'Свои поправки' : q ? 'Икама' : 'По расчёту'; })()],
       ['read', 'План чтения', S.read ? S.read.title : 'Нет'],
       ['gam', 'Путь и знаки', gamOn() ? 'Включены' : 'Выключены'],
+      ['sky', 'Небо', { live: 'Живое', night: 'Всегда ночь', day: 'Всегда день' }[S.set.sky || 'live']],
       ['vib', 'Вибрация', S.set.vib === false ? 'Выключена' : { soft: 'Мягкая', medium: 'Средняя', heavy: 'Сильная' }[S.set.vibT || 'medium']],
       ['level', 'Мой уровень', lvlName],
       ['hijri', 'Дата хиджры', S.set.hijriAdj ? (S.set.hijriAdj > 0 ? '+' : '') + S.set.hijriAdj + ' дн.' : 'Без сдвига'],
@@ -1339,6 +1427,11 @@
         '<label class="search">' + I.search + '<span class="sr">Поиск города</span><input type="search" data-in="city" placeholder="Например, Казань" value="' + esc(C.q) + '" autocomplete="off"></label>' +
         (C.loading ? '<div class="loading">Ищу…</div>' : '') + (C.error ? '<div class="small" style="color:var(--red-text);padding:4px 6px">' + esc(C.error) + '</div>' : '') +
         C.results.map((r, i) => '<button class="opt" data-a="pickCity" data-v="' + i + '"><span class="col grow"><span style="font-size:15px;font-weight:800">' + esc(r.name) + '</span><span class="small sub">' + esc([r.admin1, r.country].filter(Boolean).join(', ')) + '</span></span></button>').join('');
+    } else if (sh.type === 'sky') {
+      const cur = S.set.sky || 'live';
+      body = head('Небо', 'Фон приложения') + '<div class="col" style="gap:8px">' + [['live', 'Живое', 'Настоящее небо над вашим городом: меняется с рассветом, днём, закатом и ночью; Солнце и Луна на своих местах'], ['night', 'Всегда ночь', 'Тёмное звёздное небо в любое время, Луна с настоящей фазой'], ['day', 'Всегда день', 'Спокойное дневное небо в любое время']].map((x) =>
+        '<button class="opt' + (cur === x[0] ? ' on' : '') + '" data-a="setSky" data-v="' + x[0] + '" aria-pressed="' + (cur === x[0]) + '"><span class="col grow" style="text-align:left;gap:3px"><span style="font-size:15px;font-weight:800">' + x[1] + '</span><span class="small sub" style="line-height:1.45">' + x[2] + '</span></span>' + (cur === x[0] ? I.check : '') + '</button>').join('') + '</div>' +
+        '<div class="small sub" style="padding:4px 6px;line-height:1.5">Светлая или тёмная тема карточек выбирается отдельно, в пункте «Тема».</div><button class="btn ghost block" data-a="closeSheet">Готово</button>';
     } else if (sh.type === 'read') {
       body = vReadSheet(sh, head);
     } else if (sh.type === 'chron') {
@@ -1420,7 +1513,7 @@
     const light = document.documentElement.classList.contains('light');
     const lat = S.set.lat != null ? S.set.lat : 40, lng = S.set.lng != null ? S.set.lng : -new Date().getTimezoneOffset() / 4;
     const h = hijri(todayKey());
-    const hdr = window.IbadaSky.update({ lat, lng, light, dim: skyDim(), ten: h.m === 9 && h.d >= 20, lowfx: LOWFX || REDUCE });
+    const hdr = window.IbadaSky.update({ lat, lng, light, dim: skyDim(), ten: h.m === 9 && h.d >= 20, lowfx: LOWFX || REDUCE, fixed: S.set.sky === 'night' || S.set.sky === 'day' ? S.set.sky : '' });
     if (hdr && hdr !== lastHdr && tg) {
       lastHdr = hdr;
       try { if (ver('6.1')) { tg.setHeaderColor(hdr); tg.setBackgroundColor(hdr); } if (ver('7.10')) tg.setBottomBarColor(hdr); } catch (e) {}
@@ -1636,6 +1729,7 @@
     step(v) { const p = v.split(':'), key = p[0], delta = +p[1], cap = +p[2]; const k = viewKey(), d = ensureDay(k); const f = key === 'qiyam' ? 'q' : 'w'; d[f] = clamp((d[f] || 0) + delta, 0, cap); saveDay(k); haptic('select'); render(); },
     sheet(v) { const ci = v.indexOf(':'); if (ci > 0) S.sheet = { type: v.slice(0, ci), id: v.slice(ci + 1) }; else S.sheet = { type: v }; if (v === 'city') { S.city = { q: '', results: [], loading: false, error: '' }; } render(); if (v === 'city') { const n = document.querySelector('[data-in="city"]'); if (n && !('ontouchstart' in window)) n.focus(); } },
     closeSheet() { S.sheet = null; render(); },
+    setSky(v) { S.set.sky = v; saveSettings(); haptic('select'); render(); },
     readOfferNo() { S.set.readOffer = 'no'; saveSettings(); render(); },
     readBook(v) { S.sheet.book = v; render(); },
     readDays(v) { S.sheet.days = +v; render(); },
@@ -1704,9 +1798,10 @@
     zView(v) { S.zView = v; render(); },
     zSel(v) { S.zSel = +v; haptic('select'); render(); },
     tap() {
+      if (!S.loaded) return;
       const k = viewKey(), d = ensureDay(k);
       while (d.z.length < D.ZIKRS.length) d.z.push(0);
-      d.z[S.zSel] = (d.z[S.zSel] || 0) + 1; saveDay(k);
+      d.z[S.zSel] = (d.z[S.zSel] || 0) + 1; saveDay(k, true);
       const c = d.z[S.zSel];
       tasbihHaptic(c);
       const tc = $('#tapCount'); if (tc) tc.textContent = c;
@@ -1797,6 +1892,8 @@
     if (canSync()) syncNow(true);
     setTimeout(gamStart, 500);
     let lastVisibleSync = Date.now();
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshFromCloud(); });
+    try { if (tg) { tg.onEvent('deactivated', () => flush(true)); tg.onEvent('activated', () => refreshFromCloud()); } } catch (e) {}
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && canSync() && Date.now() - lastVisibleSync > 120000) { lastVisibleSync = Date.now(); syncNow(true); } });
     setInterval(updateSkyBg, 60000);
     window.addEventListener('resize', () => updateSkyBg());
@@ -1804,8 +1901,8 @@
       const active = document.activeElement && document.activeElement.tagName === 'INPUT';
       if (!S.sheet && !active && S.loaded && (S.tab === 'home')) render();
     }, 30000);
-    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(); else render(); });
-    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flush(true); else render(); });
+    window.addEventListener('pagehide', () => flush(true));
   }
   init();
 })();
