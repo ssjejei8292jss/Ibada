@@ -565,3 +565,9 @@ body.rcards .qtf { border-bottom: 0; padding-bottom: 6px; }
 body.rcards .qnext { padding-top: 22px; }
 .sh-tfa .tfa-f .qp-b { width: 42px; height: 42px; }
 .tfa-n { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 13px; }
+/* v11: один арабский шрифт во всём приложении — KFGQPC (Комплекс короля Фахда).
+   Арабская запятая и знак ﷺ в этом шрифте рисуются иначе, поэтому они берутся из Amiri. */
+@font-face { font-family: 'Hafs Text'; src: url('fonts/kfgqpc-hafs-18.woff2') format('woff2'); font-display: block; unicode-range: U+0600-060B, U+060D-061A, U+061C-061E, U+0620-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDF9, U+FDFB-FDFF, U+FE70-FEFF; }
+:root { --arabic: 'Hafs Text', 'Amiri', 'Noto Naskh Arabic', serif; }
+.qs-ar, .qsh-ar { font-family: var(--arabic); }
+.zk-ar { line-height: 2; }
