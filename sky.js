@@ -157,5 +157,34 @@
     return hex(mix(c[0], o.light ? DIM_LIGHT : DIM_DARK, clamp(o.dim || 0, 0, 1)));
   }
 
-  window.IbadaSky = { update, _sun: (date, lat, lng) => { const d = days(date); const h = horizontal(sunCoords(d), d, lat, lng); return { alt: h.alt / RAD, az: h.az / RAD }; }, _moon: (date) => moonPhase(days(date)) };
+  /* Небо для карточки текущего намаза (v12): те же цвета и светила, но без анимаций и без «пастели».
+     Возвращает цвета градиента, яркость звёзд, мягкое свечение Солнца (доли ширины и высоты карточки) и Луну с фазой. */
+  let cardStars = '';
+  function cardStarsSvg() {
+    if (cardStars) return cardStars;
+    let seed = 11, h = '';
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < 46; i++) {
+      const x = rnd() * 400, y = Math.pow(rnd(), 1.2) * 300, r = 0.4 + rnd() * rnd() * 1.3, o = 0.35 + rnd() * 0.65;
+      h += '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + r.toFixed(2) + '" opacity="' + o.toFixed(2) + '"/>';
+    }
+    return (cardStars = '<svg viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><g fill="#fff">' + h + '</g></svg>');
+  }
+  function card(o) {
+    const now = o.now || new Date(), d = days(now);
+    const fixed = o.fixed === 'night' || o.fixed === 'day' ? o.fixed : '';
+    const sun = horizontal(sunCoords(d), d, o.lat, o.lng), alt = fixed === 'night' ? -30 : fixed === 'day' ? 40 : sun.alt / RAD;
+    const c = palette(alt, sun.az < 0).map(hex);
+    const stars = clamp((-alt - 3) / 12, 0, 1) * (o.ten ? 1 : 0.85);
+    let glow = null;
+    if (alt > -6) {
+      const az = fixed ? 0.35 : clamp(sun.az / Math.PI, -0.5, 0.5);
+      glow = { x: clamp(0.5 + az * 0.9, 0.08, 0.92), y: clamp(0.62 - (Math.max(alt, -4) / 70) * 0.55, 0.06, 0.66), op: clamp((alt + 6) / 10, 0, 1), low: alt < 8 };
+    }
+    const ph = moonPhase(d), mh = horizontal(moonCoords(d), d, o.lat, o.lng);
+    const moon = alt < 2 && ph.fraction > 0.02 && (fixed === 'night' || mh.alt > -0.02) ? moonSvg(ph.fraction, ph.phase) : '';
+    return { c, stars: +stars.toFixed(2), starsSvg: stars > 0.02 ? cardStarsSvg() : '', glow, moon, night: alt < -6 };
+  }
+
+  window.IbadaSky = { update, card, _sun: (date, lat, lng) => { const d = days(date); const h = horizontal(sunCoords(d), d, lat, lng); return { alt: h.alt / RAD, az: h.az / RAD }; }, _moon: (date) => moonPhase(days(date)) };
 })();
