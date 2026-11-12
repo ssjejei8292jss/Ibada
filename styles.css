@@ -371,3 +371,24 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .rd-bar.on i { background: var(--gold-hi); }
 .rd-bar b { position: absolute; left: 0; right: 0; top: 2px; text-align: center; font-size: 9.5px; font-weight: 800; color: var(--sub); }
 .rd-bar.off { opacity: .35; }
+
+/* ===== v9: тафсир ас-Саади в читалке ===== */
+.rd-main { display: flex; flex-direction: column; gap: 10px; width: 100%; text-align: left; background: none; border: 0; padding: 0; color: inherit; }
+.rd-go svg, .btn[data-a="readOpen"] svg { width: 18px; height: 18px; flex: none; }
+.tf-cont { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; }
+.tf-plan { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 10px 12px; border-radius: 20px; border: 1px solid var(--gold-line); background: var(--gold-soft); color: var(--text); }
+.tf-plan .rd-ico { width: 36px; height: 36px; border-radius: 12px; }
+.tfg { gap: 14px; }
+.tf-ay { display: flex; flex-direction: column; gap: 10px; scroll-margin-top: 12px; }
+.tf-ay + .tf-ay { border-top: 1px dashed var(--line2); padding-top: 12px; }
+.tf-body { border-top: 1px solid var(--gold-line); padding-top: 14px; display: flex; flex-direction: column; gap: 12px; }
+.tf-body p { margin: 0; font-size: 16px; line-height: 1.68; color: var(--text); text-wrap: pretty; hyphens: auto; -webkit-hyphens: auto; }
+.tf-lbl { font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--gold); }
+.tf-foot { display: flex; justify-content: flex-end; }
+.tf-mark { min-height: 38px; padding: 0 16px; border-radius: 19px; border: 1px solid var(--gold-line); background: transparent; color: var(--gold-hi); font-size: 13px; font-weight: 800; display: inline-flex; align-items: center; gap: 6px; }
+.tf-mark.on { border-color: transparent; background: var(--emerald-soft); color: var(--emerald-text); }
+.tf-mark svg { width: 16px; height: 16px; }
+.tf-line { display: flex; align-items: center; gap: 10px; font-size: 11.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--emerald-text); padding: 2px 4px; }
+.tf-line::before, .tf-line::after { content: ''; flex: 1; height: 1px; background: currentColor; opacity: .45; }
+.tf-line.gold { color: var(--gold-hi); }
+.tf-src { padding: 2px 6px 8px; line-height: 1.5; }
