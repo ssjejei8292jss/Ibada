@@ -392,3 +392,160 @@ button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid 
 .tf-line::before, .tf-line::after { content: ''; flex: 1; height: 1px; background: currentColor; opacity: .45; }
 .tf-line.gold { color: var(--gold-hi); }
 .tf-src { padding: 2px 6px 8px; line-height: 1.5; }
+
+/* ===== v10: чтение Корана ===== */
+@font-face { font-family: 'KFGQPC Hafs'; src: url('fonts/kfgqpc-hafs-18.woff2') format('woff2'); font-display: block; }
+:root { --quran: 'KFGQPC Hafs', 'Amiri Quran', serif; --book: 'Literata', Georgia, serif; --rfs: 18px; --ras: 30px; }
+body.reading { --r-bg: #0C1120; --r-bar: rgba(12,17,32,0.94); --r-text: #EEE8DA; --r-text2: #DCD5C6; --r-sub: #98A1B5; --r-gold: #E6BE6E; --r-goldhi: #F2D38E; --r-gline: rgba(230,190,110,0.30); --r-line: rgba(255,255,255,0.08); --r-chip: rgba(255,255,255,0.07); --r-segon: rgba(255,255,255,0.14); --r-pill: rgba(24,31,52,0.96); --r-shadow: rgba(0,0,0,0.42); --r-sel: rgba(230,190,110,0.11); --r-em: #6FDDB5; --r-emsoft: rgba(111,221,181,0.11); --r-ongold: #1A1406; }
+body.reading.rbg-sepia { --r-bg: #F3EBDC; --r-bar: rgba(243,235,220,0.95); --r-text: #33281C; --r-text2: #43372A; --r-sub: #6E5E49; --r-gold: #97702B; --r-goldhi: #7E5C1E; --r-gline: rgba(151,112,43,0.35); --r-line: rgba(58,46,33,0.13); --r-chip: rgba(58,46,33,0.07); --r-segon: #FFFBF3; --r-pill: rgba(255,251,243,0.97); --r-shadow: rgba(80,60,30,0.18); --r-sel: rgba(151,112,43,0.12); --r-em: #256E52; --r-emsoft: rgba(37,110,82,0.10); --r-ongold: #FFF8EA; }
+body.reading.rbg-day { --r-bg: #FBFAF7; --r-bar: rgba(251,250,247,0.95); --r-text: #1D2230; --r-text2: #2C3242; --r-sub: #5D6578; --r-gold: #9A7430; --r-goldhi: #7E5C1E; --r-gline: rgba(154,116,48,0.32); --r-line: rgba(20,24,36,0.10); --r-chip: rgba(20,24,36,0.06); --r-segon: #FFFFFF; --r-pill: rgba(255,255,255,0.97); --r-shadow: rgba(20,24,36,0.14); --r-sel: rgba(154,116,48,0.11); --r-em: #1F6E50; --r-emsoft: rgba(31,110,80,0.09); --r-ongold: #FFFFFF; }
+body.reading.rbg-sky { --r-bg: transparent; --r-bar: rgba(10,16,34,0.72); --r-pill: rgba(18,25,46,0.9); }
+body.reading #scroll { background: var(--r-bg); }
+.screen.reader { padding: 0 0 calc(104px + var(--safe-bottom)); gap: 0; max-width: 680px; color: var(--r-text); }
+.screen.reader .sub { color: var(--r-sub); }
+.qpad { padding: 0 16px; }
+/* шапка */
+.rh { position: sticky; top: 0; z-index: 6; padding: var(--safe-top) 10px 0; background: var(--r-bar); border-bottom: 1px solid var(--r-line); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); transition: transform .25s ease; }
+.rh.hid { transform: translateY(-100%); }
+.rh-row { height: 56px; display: flex; align-items: center; gap: 8px; }
+.rh-i { width: 44px; height: 44px; flex: none; border: 0; border-radius: 14px; background: var(--r-chip); color: var(--r-text); display: flex; align-items: center; justify-content: center; }
+.rh-aa { font-family: var(--book); font-size: 17px; font-weight: 600; }
+.rh-t { flex: 1 1 auto; min-width: 0; border: 0; background: none; color: var(--r-text); display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 0; }
+.rh-n { display: flex; align-items: center; gap: 4px; max-width: 100%; font-size: 16px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rh-s { font-size: 12px; font-weight: 600; color: var(--r-sub); font-variant-numeric: tabular-nums; }
+.seg.mini.rh-seg { margin: 0 6px 8px; background: var(--r-chip); }
+.rh-seg button { color: var(--r-sub); }
+.rh-seg button.on { background: var(--r-segon); color: var(--r-text); box-shadow: none; }
+.rh-p { height: 2px; margin: 0 -10px; background: var(--r-chip); }
+.rh-p i { display: block; height: 100%; background: var(--r-gold); transition: width .3s ease; }
+/* заголовок суры */
+.qsh { margin: 16px 16px 4px; border-radius: 18px; border: 1px solid var(--r-gline); background: var(--r-sel); padding: 8px 14px; display: flex; flex-direction: column; align-items: center; gap: 1px; text-align: center; }
+.qsh-ar { font-family: 'Amiri', var(--quran); font-size: 24px; line-height: 1.55; color: var(--r-goldhi); }
+.qsh-m { font-size: 12px; font-weight: 700; color: var(--r-sub); }
+.qbas { margin: 8px 16px 2px; text-align: center; font-family: var(--quran); font-size: calc(var(--ras) * 0.9); line-height: 2; color: var(--r-goldhi); }
+.qnote { margin: 10px 16px; padding: 10px 14px; border-radius: 14px; background: var(--r-chip); color: var(--r-sub); font-size: 13px; line-height: 1.45; }
+.qload { padding: 48px 20px; text-align: center; color: var(--r-sub); }
+/* аят с переводом */
+.qa { margin: 0 8px; padding: 14px 12px 16px; border-bottom: 1px solid var(--r-line); display: flex; flex-direction: column; gap: 10px; cursor: pointer; -webkit-tap-highlight-color: transparent; transition: background .2s ease; scroll-margin-top: calc(var(--safe-top) + 106px); }
+.qa.sel { background: var(--r-sel); border-radius: 18px; border-bottom-color: transparent; }
+.qa-top { display: flex; align-items: flex-start; gap: 12px; }
+.qa-n { flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px; margin-top: 4px; color: var(--r-goldhi); }
+.qa-n .star { width: 36px; height: 36px; font-size: 11.5px; color: var(--r-goldhi); }
+.qa-n .star svg { width: 36px; height: 36px; }
+.qa-bm { color: var(--r-gold); display: flex; }
+.qar { flex: 1 1 auto; min-width: 0; margin: 0; font-family: var(--quran); font-size: var(--ras); line-height: 2.05; text-align: right; color: var(--r-text); }
+.qru { margin: 0; font-family: var(--book); font-size: var(--rfs); line-height: 1.55; color: var(--r-text); }
+body.rplain .qru, body.rplain .qtf p, body.rplain .tfa-b p, body.rplain .tfa-tr { font-family: var(--sans); }
+.screen.reader .star svg rect { stroke: var(--r-gold); }
+/* только арабский: страница мусхафа */
+.mp { margin: 10px 0 0; padding: 0 18px; font-family: var(--quran); font-size: var(--ras); line-height: 2.2; text-align: justify; text-align-last: center; color: var(--r-text); }
+.ma { cursor: pointer; border-radius: 10px; -webkit-tap-highlight-color: transparent; scroll-margin-top: calc(var(--safe-top) + 106px); transition: background .2s ease; }
+.ma.sel { background: var(--r-sel); box-shadow: 0 0 0 4px var(--r-sel); }
+.mpn { display: flex; align-items: center; gap: 12px; margin: 4px 20px 6px; font-size: 11.5px; font-weight: 800; color: var(--r-sub); font-variant-numeric: tabular-nums; }
+.mpn::before, .mpn::after { content: ''; flex: 1; height: 1px; background: var(--r-line); }
+/* тафсир */
+.qg { display: flex; flex-direction: column; }
+.qg .qa { border-bottom: 0; padding-bottom: 4px; }
+.qtf { margin: 0 20px; padding: 4px 0 16px; border-bottom: 1px solid var(--r-line); }
+.qtf-l { display: flex; align-items: center; gap: 10px; padding: 8px 0 12px; font-size: 11px; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; color: var(--r-gold); }
+.qtf-l::after { content: ''; flex: 1; height: 1px; background: var(--r-gline); }
+.qtf p { margin: 0 0 14px; font-family: var(--book); font-size: calc(var(--rfs) - 0.5px); line-height: 1.72; color: var(--r-text2); hyphens: auto; -webkit-hyphens: auto; text-wrap: pretty; }
+.qtf-foot { display: flex; justify-content: flex-end; padding: 10px 20px 14px; }
+.screen.reader .tf-mark { border-color: var(--r-gline); color: var(--r-goldhi); }
+.screen.reader .tf-mark.on { background: var(--r-emsoft); color: var(--r-em); border-color: transparent; }
+.screen.reader .tf-line { color: var(--r-em); margin: 10px 0; }
+.qnorm { margin: 14px 16px; padding: 12px 14px; border-radius: 16px; background: var(--r-sel); color: var(--r-goldhi); display: flex; align-items: center; gap: 10px; }
+.qnorm.done { background: var(--r-emsoft); color: var(--r-em); }
+.qnorm span { display: flex; flex-direction: column; gap: 2px; }
+.qnorm b { font-size: 14px; font-weight: 800; }
+.qnorm small { font-size: 12.5px; font-weight: 600; opacity: .85; }
+.qnext { padding: 18px 16px 6px; gap: 8px; }
+.screen.reader .btn.ghost { color: var(--r-text); border-color: var(--r-line); }
+.screen.reader .tf-src { padding-top: 14px; line-height: 1.5; }
+.screen.reader .card { background: var(--r-chip); border-color: var(--r-line); color: var(--r-text); }
+/* нижняя плашка */
+.qpill { position: fixed; left: 50%; transform: translateX(-50%); width: min(520px, calc(100% - 28px)); bottom: calc(14px + var(--safe-bottom)); z-index: 7; min-height: 60px; border-radius: 30px; background: var(--r-pill); border: 1px solid var(--r-line); box-shadow: 0 12px 30px var(--r-shadow); display: flex; align-items: center; gap: 6px; padding: 0 7px; color: var(--r-text); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
+.qp-b { width: 44px; height: 44px; flex: none; border: 0; border-radius: 22px; background: var(--r-chip); color: var(--r-text); display: flex; align-items: center; justify-content: center; }
+.qp-b:disabled { opacity: .35; }
+.qp-ok { background: var(--r-gold); color: var(--r-ongold); }
+.qp-m { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.qp-r { display: flex; justify-content: space-between; gap: 8px; font-size: 12.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.qp-bar { height: 4px; border-radius: 2px; background: var(--r-chip); overflow: hidden; display: block; }
+.qp-bar i { display: block; height: 100%; background: var(--r-gold); transition: width .3s ease; }
+.qp-plan { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 10px; border: 0; background: none; color: var(--r-text); text-align: left; padding: 7px 0 7px 2px; }
+.qp-plan .qp-m { gap: 1px; }
+.qp-plan b { font-size: 14px; font-weight: 800; }
+.qp-plan .sub { font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* кольцо прогресса */
+.qring { position: relative; flex: none; display: inline-flex; }
+.qring svg { transform: rotate(-90deg); }
+.qring circle { fill: none; }
+.qring-t { stroke: var(--track); }
+.reading .qring-t { stroke: var(--r-chip); }
+.qring-v { stroke: var(--gold); stroke-linecap: round; transition: stroke-dasharray .4s ease; }
+.reading .qring-v { stroke: var(--r-gold); }
+.qring-v.done { stroke: var(--emerald); }
+.reading .qring-v.done { stroke: var(--r-em); }
+.qring-l { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; text-align: center; }
+.qring-l b { font-family: var(--serif); font-size: 28px; font-weight: 700; color: var(--gold-hi); }
+.qring-l small { font-size: 10.5px; font-weight: 700; color: var(--sub); margin-top: 2px; max-width: 58px; }
+.qpill .qring-l b { font-family: var(--sans); font-size: 14px; font-weight: 800; color: var(--r-goldhi); }
+.qring-l svg { width: 22px; height: 22px; color: var(--emerald-text); }
+.qpill .qring-l svg { color: var(--r-em); }
+/* действия с аятом */
+.qtool { position: fixed; left: 50%; transform: translateX(-50%); width: min(520px, calc(100% - 20px)); bottom: calc(84px + var(--safe-bottom)); z-index: 8; border-radius: 22px; background: var(--r-pill); border: 1px solid var(--r-line); box-shadow: 0 14px 34px var(--r-shadow); display: flex; gap: 4px; padding: 6px; color: var(--r-text); animation: fade .15s ease; }
+.qt-b { flex: 1 1 0; min-width: 0; min-height: 58px; border: 0; border-radius: 16px; background: var(--r-chip); color: var(--r-text); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 0 2px; font-size: 10.5px; font-weight: 700; line-height: 1.15; text-align: center; }
+.qt-b.gold { background: var(--r-gold); color: var(--r-ongold); }
+.qt-b svg { width: 20px; height: 20px; flex: none; }
+.qt-x { width: 34px; flex: none; border: 0; background: none; color: var(--r-sub); display: flex; align-items: center; justify-content: center; padding: 0; }
+/* вкладка «Коран» */
+.qhero { display: flex; flex-direction: column; gap: 14px; border-color: var(--gold-line); }
+.qhero-t { font-family: var(--serif); font-size: 23px; font-weight: 600; line-height: 1.1; }
+.qhero .btn svg, .btn[data-a="readOpen"] svg { width: 19px; height: 19px; flex: none; }
+.qcont { display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; text-align: left; }
+.qs-ar { font-family: 'Amiri', var(--arabic); font-size: 20px; color: var(--gold-hi); direction: rtl; flex: none; }
+.qs-tf { display: flex; align-items: center; gap: 6px; margin-top: 2px; font-size: 11.5px; font-weight: 700; color: var(--gold-hi); }
+.qs-tf i { width: 54px; height: 4px; border-radius: 2px; background: var(--track); overflow: hidden; display: block; }
+.qs-tf b { display: block; height: 100%; background: var(--gold); }
+.qs-tf.done { color: var(--emerald-text); }
+.qs-tf.done b { background: var(--emerald); }
+.juz-n { width: 40px; height: 40px; flex: none; border-radius: 20px 20px 8px 8px; background: var(--gold-soft); color: var(--gold-hi); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 800; }
+/* шторки: содержание, «Аа», толкование одного аята */
+.sheet.sh-tall { top: calc(var(--safe-top) + 40px); max-height: none; }
+.rs-row { display: flex; flex-direction: column; gap: 8px; padding: 4px 4px; }
+.rs-l { font-size: 13px; font-weight: 800; color: var(--sub); }
+.rs-steps { display: flex; align-items: center; gap: 2px; }
+.rs-g { width: 28px; flex: none; text-align: center; line-height: 1; }
+.rs-dot { flex: 1 1 0; height: 44px; border: 0; padding: 0; background: none; position: relative; display: flex; align-items: center; justify-content: center; }
+.rs-dot::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 4px; margin-top: -2px; background: var(--track); }
+.rs-dot.past::before { background: var(--gold); }
+.rs-dot i { position: relative; width: 10px; height: 10px; border-radius: 50%; background: var(--line2); }
+.rs-dot.past i { background: var(--gold); }
+.rs-dot.on i { width: 26px; height: 26px; background: #F4EFE6; border: 3px solid var(--gold); box-shadow: 0 2px 8px rgba(0,0,0,0.35); }
+.rs-bgs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.rs-bg { min-height: 80px; border-radius: 16px; border: 1px solid var(--line); background: transparent; color: var(--text); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; font-size: 12.5px; font-weight: 700; }
+.rs-bg.on { border: 2px solid var(--gold); }
+.rs-swatch { width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; font-family: var(--book); font-size: 14px; font-weight: 600; border: 1px solid var(--line2); }
+.sw-night { background: #0C1120; color: #EEE8DA; }
+.sw-sepia { background: #F3EBDC; color: #33281C; }
+.sw-day { background: #FBFAF7; color: #1D2230; }
+.sw-sky { background: linear-gradient(160deg, #2B4478 0%, #0B1226 100%); color: #EEE8DA; }
+.rs-box { border-radius: 18px; border: 1px solid var(--line); padding: 2px 6px 2px 14px; }
+.rs-sw { justify-content: space-between; gap: 10px; }
+.rs-sw + .rs-sw { border-top: 1px solid var(--line); }
+.tfa-h { display: flex; align-items: flex-start; gap: 10px; padding: 4px 2px 2px 6px; }
+.tfa-t { font-family: var(--serif); font-size: 26px; font-weight: 600; line-height: 1.1; }
+.tfa-q { border-radius: 18px; background: var(--gold-soft); border: 1px solid var(--gold-line); padding: 10px 16px 12px; display: flex; flex-direction: column; gap: 6px; }
+.tfa-ar { margin: 0; font-family: var(--quran); font-size: 25px; line-height: 1.95; text-align: right; color: var(--text); }
+.tfa-tr { margin: 0; font-family: var(--book); font-style: italic; font-size: 16.5px; line-height: 1.5; color: var(--gold-hi); }
+.tfa-b { padding: 6px 4px 0; }
+.tfa-b p { margin: 0 0 14px; font-family: var(--book); font-size: 17.5px; line-height: 1.7; color: var(--text); hyphens: auto; -webkit-hyphens: auto; }
+.tfa-f { position: sticky; bottom: -16px; margin: 0 -14px -16px; padding: 10px 14px calc(14px + var(--safe-bottom)); display: flex; align-items: center; gap: 8px; background: var(--sheet); border-top: 1px solid var(--line); }
+.tfa-f .qp-b { background: var(--surface2); color: var(--text); }
+.tfa-f .qp-ok { background: var(--gold); color: var(--on-gold); }
+.tfa-nav { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 6px; border-radius: 26px; background: var(--surface2); padding: 4px; font-size: 13.5px; font-weight: 800; }
+.tfa-nav .qp-b { background: transparent; }
+.tfa-nav .qp-ok { background: var(--gold); }
+.qa-n .star { width: 40px; height: 40px; font-size: 11.5px; }
+.qa-n .star svg { width: 40px; height: 40px; }
+.qa-n.n3 .star { font-size: 10px; letter-spacing: -0.02em; }
