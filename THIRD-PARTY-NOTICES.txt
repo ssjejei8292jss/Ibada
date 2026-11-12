@@ -1,3 +1,7 @@
+Сторонние библиотеки / Third-party notices
+
+adhan.min.js — библиотека adhan-js (https://github.com/batoulapps/adhan-js)
+
 The MIT License (MIT)
 
 Copyright (c) 2016 Batoul Apps
