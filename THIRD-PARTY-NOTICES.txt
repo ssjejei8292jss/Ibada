@@ -23,3 +23,15 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+
+----------------------------------------------------------------------
+Тексты, которые приложение загружает из открытых источников (в репозитории не хранятся)
+
+Тафсир ас-Саади «Тайсир аль-Карим ар-Рахман», русский перевод Эльмира Кулиева —
+набор spa5k/tafsir_api (https://github.com/spa5k/tafsir_api), издание ru-tafseer-al-saddi,
+источник — библиотека QUL / Tarteel (ресурс 36). Версия закреплена: eb82bb6294efe30ad5c135c03b1864afaa70e855.
+Права на текст принадлежат правообладателям; приложение лишь показывает его для личного чтения.
+
+saadi-index.js содержит только числа — объём перевода и толкования по каждому аяту.
+Для подсчёта длины перевода использован набор fawazahmed0/quran-api (издание rus-elmirkuliev, Unlicense).
