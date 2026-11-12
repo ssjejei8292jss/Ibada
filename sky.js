@@ -92,7 +92,13 @@
     return '<svg class="sky-stars" viewBox="0 0 400 800" preserveAspectRatio="xMidYMin slice"><g fill="#fff">' + h + '</g></svg>';
   }
 
-  let root = null, E = {}, ready = false, lastMoon = '';
+  let root = null, E = {}, ready = false, lastMoon = '', lastMode = '';
+  // Переставить светило без медленного «проплывания» (когда оно появляется или сменился вид неба)
+  function place(el, x, y, jump) {
+    const tr = 'translate(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px)';
+    if (jump) { el.style.transition = 'none'; el.style.transform = tr; void el.offsetWidth; el.style.transition = ''; }
+    else el.style.transform = tr;
+  }
   function mount() {
     root = document.getElementById('sky');
     if (!root) return false;
@@ -101,11 +107,14 @@
     return true;
   }
 
-  /* o: { lat, lng, light, dim (0–1), ten (последние 10 ночей Рамадана), lowfx, now } → цвет верха неба для шапки Telegram */
+  /* o: { lat, lng, light, dim (0–1), ten (последние 10 ночей Рамадана), lowfx, now,
+          fixed: 'night' | 'day' — постоянное небо вместо живого } → цвет верха неба для шапки Telegram */
   function update(o) {
     if (!root && !mount()) return null;
     const now = o.now || new Date(), d = days(now);
-    const sun = horizontal(sunCoords(d), d, o.lat, o.lng), alt = sun.alt / RAD;
+    const fixed = o.fixed === 'night' || o.fixed === 'day' ? o.fixed : '';
+    const modeChanged = fixed !== lastMode; lastMode = fixed;
+    const sun = horizontal(sunCoords(d), d, o.lat, o.lng), alt = fixed === 'night' ? -30 : fixed === 'day' ? 40 : sun.alt / RAD;
     let c = palette(alt, sun.az < 0);
     if (o.light) c = c.map((x, i) => pastel(x, i === 2 ? 0.6 : 0.74));
     root.style.setProperty('--s1', hex(c[0]));
@@ -121,19 +130,25 @@
     const bodies = (o.dim || 0) < 0.2;
     const W = root.clientWidth || window.innerWidth, H = root.clientHeight || window.innerHeight, hy = H * 0.6;
     const pos = (h) => [W * (0.5 + clamp(h.az / Math.PI, -0.5, 0.5) * 0.9), hy - (h.alt / (Math.PI / 2)) * hy * 0.9];
-    if (bodies && alt > -4) {
+    if (bodies && !fixed && alt > -4) {
       const p = pos(sun);
-      E.sun.style.transform = 'translate(' + p[0].toFixed(1) + 'px,' + p[1].toFixed(1) + 'px)';
+      place(E.sun, p[0], p[1], modeChanged || E.sun.style.opacity === '0' || !E.sun.style.opacity);
       E.sun.style.opacity = clamp((alt + 4) / 6, 0, 1).toFixed(2);
       E.sun.classList.toggle('low', alt < 8);
     } else E.sun.style.opacity = 0;
 
     const mh = horizontal(moonCoords(d), d, o.lat, o.lng), ph = moonPhase(d);
-    if (bodies && mh.alt > -0.02 && ph.fraction > 0.02) {
+    if (bodies && fixed === 'night' && ph.fraction > 0.02) {
+      // постоянная ночь: Луна с настоящей фазой, но на постоянном месте
+      const key = ph.fraction.toFixed(2) + (ph.phase < 0.5 ? 'w' : 'n');
+      if (key !== lastMoon) { E.moon.innerHTML = moonSvg(ph.fraction, ph.phase); lastMoon = key; }
+      place(E.moon, W * 0.82, H * 0.13, true);
+      E.moon.style.opacity = o.light ? 0.8 : 1;
+    } else if (bodies && !fixed && mh.alt > -0.02 && ph.fraction > 0.02) {
       const key = ph.fraction.toFixed(2) + (ph.phase < 0.5 ? 'w' : 'n');
       if (key !== lastMoon) { E.moon.innerHTML = moonSvg(ph.fraction, ph.phase); lastMoon = key; }
       const p = pos(mh);
-      E.moon.style.transform = 'translate(' + p[0].toFixed(1) + 'px,' + p[1].toFixed(1) + 'px)';
+      place(E.moon, p[0], p[1], modeChanged || E.moon.style.opacity === '0' || !E.moon.style.opacity);
       E.moon.style.opacity = (alt > 0 ? 0.6 : alt > -6 ? 0.9 : 1) * (o.light ? 0.8 : 1);
     } else E.moon.style.opacity = 0;
 
