@@ -727,3 +727,40 @@ button.card { transition: transform .12s ease; }
 .gm-stage .between > .col:last-child { flex: none; text-align: right; }
 /* v12.1: шторка прокручивается целиком — карточки внутри не сжимаются (иначе обрезалась сунна, например «Азкары после намаза» у Фаджра) */
 .sheet > * { flex-shrink: 0; }
+
+/* v13: цели по Корану и заучивание наизусть */
+.sec-h.ctr { align-items: center; }
+.sec-a { min-height: 36px; padding: 0 14px 0 10px; border: 0; border-radius: 18px; background: var(--gold-soft); color: var(--gold-hi); font: inherit; font-size: 13.5px; font-weight: 800; display: inline-flex; align-items: center; gap: 4px; }
+.sec-a svg { width: 16px; height: 16px; }
+.qg-ic { width: 44px; height: 44px; flex: none; border-radius: 22px; display: flex; align-items: center; justify-content: center; background: var(--gold-soft); color: var(--gold-hi); }
+.qg-ic.done { background: var(--emerald-soft); color: var(--emerald-text); }
+.qg-ic svg { width: 20px; height: 20px; }
+.qg-chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 2px 2px 0; }
+.qg-chip { min-height: 40px; padding: 0 14px; border-radius: 20px; border: 1px solid var(--line2); background: transparent; color: var(--text); font: inherit; font-size: 14px; font-weight: 700; }
+.qg-chip.on { border-color: var(--gold); background: var(--gold-soft); color: var(--gold-hi); font-weight: 800; }
+.qg-range { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.qg-range label, .qg-upto { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.qg-range label > span, .qg-upto > span { font-size: 12.5px; font-weight: 700; color: var(--sub); padding: 0 4px; }
+.qg-range select, .qg-upto select { width: 100%; min-height: 46px; padding: 0 12px; border-radius: var(--r-sm); border: 1px solid var(--line2); background: var(--surface); color: var(--text); font: inherit; font-size: 15px; font-weight: 700; -webkit-appearance: none; appearance: none; }
+.qg-upto { padding: 2px 2px 0; }
+.li.qg-s { min-height: 54px; padding: 7px 14px 7px 10px; }
+.qg-n { width: 32px; flex: none; text-align: center; font-size: 13px; font-weight: 800; color: var(--muted); }
+.qg-sum { display: flex; flex-direction: column; gap: 8px; }
+.qg-big { font-family: var(--serif); font-size: 30px; font-weight: 700; line-height: 1.05; color: var(--gold-hi); }
+.qg-big.ok { color: var(--emerald-text); }
+.qg-x { padding: 6px 6px; }
+.qg-open { width: 44px; height: 44px; flex: none; border: 0; border-radius: 22px; background: var(--surface2); color: var(--gold-hi); display: flex; align-items: center; justify-content: center; }
+.qg-open svg { width: 20px; height: 20px; }
+.hz-rv { padding: 12px 14px; }
+.qs-hz { display: inline-flex; align-items: center; gap: 4px; margin-top: 2px; font-size: 11.5px; font-weight: 800; color: var(--emerald-text); }
+.qs-hz svg { width: 12px; height: 12px; }
+.qs-hz.learn { color: var(--gold-hi); }
+/* в читалке, в конце суры */
+.qg-rd { display: flex; flex-direction: column; gap: 8px; padding: 18px 16px 0; }
+.qg-mk { width: 100%; min-height: 60px; display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-radius: var(--r-md); border: 1.5px solid var(--r-gline, var(--gold-line)); background: var(--r-card, var(--surface)); color: var(--r-text, var(--text)); font: inherit; text-align: left; }
+.qg-mk .li-m { color: var(--r-sub, var(--sub)); }
+.qg-mk .ck2 { border-color: var(--r-gold, var(--gold)); }
+.qg-mk .ck2.st-done { background: var(--r-em, var(--emerald)); }
+.qg-mk.on { border-color: transparent; background: var(--r-emsoft, var(--emerald-soft)); }
+.qg-mk .qg-ic { width: 32px; height: 32px; background: transparent; color: var(--r-goldhi, var(--gold-hi)); }
+.qg-pick { max-height: min(46vh, 380px); overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
