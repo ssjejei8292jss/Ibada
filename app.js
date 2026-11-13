@@ -72,7 +72,8 @@
     heading: null, compassOn: false, qiblaAligned: false,
     toast: '', loaded: false,
     gam: { seen: {}, goal: null, goals: [], qadaMade: 0, qw: {}, init: 0, chron: '' },
-    read: null
+    read: null,
+    qg: { u: 0, g: [] }, hz: { u: 0, s: {}, rv: null }
   };
 
   /* ===== даты ===== */
@@ -375,6 +376,7 @@
         if (hk === 'settings') ok = await store.set('settings', JSON.stringify(S.set));
         else if (hk === 'gam') ok = await store.set('gam', JSON.stringify(S.gam));
         else if (hk === 'read') ok = await store.set('read', S.read ? JSON.stringify(S.read) : '');
+        else if (hk === 'qg' || hk === 'hz') ok = await store.set(hk, JSON.stringify(S[hk]));
         else {
           if (!fast) {
             const cur = await store.get([hk]);
@@ -400,11 +402,12 @@
   async function refreshFromCloud() {
     if (!S.loaded) return;
     const t = todayKey(), recent = [halfKey(t), halfKey(addDays(t, -16)), halfKey(addDays(t, -32))];
-    const vals = await store.get(recent.concat(['read', 'settings']));
+    const vals = await store.get(recent.concat(['read', 'settings', 'qg', 'hz']));
     if (!vals) return;
     let changed = false;
     recent.forEach((hk) => { if (vals[hk] && adoptNewer(hk, vals[hk])) changed = true; });
     if (vals.read) { try { const r = JSON.parse(vals.read); if (r && (!S.read || (r.u || 0) > (S.read.u || 0))) { S.read = r; changed = true; } } catch (e) {} }
+    [['qg', 'g'], ['hz', 's']].forEach((x) => { if (!vals[x[0]] || dirty[x[0]]) return; try { const v = JSON.parse(vals[x[0]]); if (v && v[x[1]] && (v.u || 0) > (S[x[0]].u || 0)) { S[x[0]] = x[0] === 'hz' ? Object.assign({ rv: null }, v) : v; changed = true; } } catch (e) {} });
     if (vals.settings) { try { const cs = JSON.parse(vals.settings); (cs.pending || []).forEach((k) => { const p = S.set.pending || (S.set.pending = []); if (p.indexOf(k) < 0) p.push(k); }); } catch (e) {} }
     if (changed) { dataVer++; render(); }
   }
@@ -412,7 +415,7 @@
     try {
       let ks = await store.keys();
       if (!ks.length) { await new Promise((r) => setTimeout(r, 600)); ks = await store.keys(); }
-      const want = ks.filter((k) => k === 'settings' || k === 'gam' || k === 'read' || k.indexOf('h_') === 0);
+      const want = ks.filter((k) => k === 'settings' || k === 'gam' || k === 'read' || k === 'qg' || k === 'hz' || k.indexOf('h_') === 0);
       const vals = {};
       for (let i = 0; i < want.length; i += 50) {
         let part = await store.get(want.slice(i, i + 50));
@@ -422,6 +425,8 @@
       }
       if (vals.settings) { try { S.set = Object.assign({}, DEFAULT_SET, JSON.parse(vals.settings)); } catch (e) {} }
       if (vals.read) { try { S.read = JSON.parse(vals.read) || null; } catch (e) {} }
+      if (vals.qg) { try { const v = JSON.parse(vals.qg); if (v && Array.isArray(v.g)) S.qg = v; } catch (e) {} }
+      if (vals.hz) { try { const v = JSON.parse(vals.hz); if (v && v.s) S.hz = Object.assign({ rv: null }, v); } catch (e) {} }
       if (vals.gam) { try { S.gam = Object.assign({}, S.gam, JSON.parse(vals.gam)); S.gam.seen = S.gam.seen || {}; } catch (e) {} }
       Object.keys(vals).forEach((hk) => {
         if (hk.indexOf('h_') !== 0) return;
@@ -728,6 +733,7 @@
       n++; if (ok) done++;
       add(20, item(isSaadi(R) && !st.before ? 'readOpen' : 'sheet', isSaadi(R) && !st.before ? '' : 'read', esc(R.title), m, ok ? ck(true) : st.before ? '<span class="li-v"><b class="num">' + st.base + ' стр.</b></span>' : meter(st.readToday + ' из ' + st.norm + ' стр.', st.readToday / Math.max(1, st.norm))));
     }
+    if (isToday) { const qd = qgTodayItems(add, item, ck, meter); n += qd[0]; done += qd[1]; }
     check(30, 'kahf', 'Сура аль-Кахф', 'Сунна пятницы');
     check(31, 'ghusl', 'Гусль', 'Перед пятничным намазом');
     check(morning ? 25 : 40, 'duha', 'Духа-намаз', 'После восхода, до Зухра');
@@ -890,6 +896,7 @@
     }
     const ql = S.set.qlast || { s: 1, a: 1 };
     out.push('<button class="card qcont" data-a="readQ">' + STAR(ql.s) + '<span class="col grow" style="gap:2px;min-width:0"><span class="eyebrow" style="padding:0">' + (S.set.qlast ? 'Чтение Корана' : 'Начать чтение Корана') + '</span><span style="font-size:15px;font-weight:800">' + D.SURAH_RU[ql.s - 1] + ' · аят ' + ql.a + ' из ' + D.SURAH_AYAHS[ql.s - 1] + '</span></span>' + I.chev + '</button>');
+    out.push(vQGoals());
     out.push(vQSearch() + vQSeg('qView', Q.view) + vQList(Q.view, Q.filter, tp));
     return out.join('');
   }
@@ -913,10 +920,11 @@
     const cur = tp ? tp.cur : -1;
     D.SURAH_RU.forEach((ru, i) => {
       const n = i + 1;
-      if (f && !m && String(n) !== f && ru.toLowerCase().indexOf(f) < 0) return;
+      if (f && !m && String(n) !== f && ru.toLowerCase().indexOf(f) < 0 && (!sNorm(f) || sNorm(ru).indexOf(sNorm(f)) < 0)) return;
       const fr = tp ? surahTf(n, cur) : 0;
+      const h = hzOf(n), hz = h[0] === 2 ? '<span class="qs-hz">' + I.checkSm + 'наизусть</span>' : h[0] === 1 ? '<span class="qs-hz learn">учу · ' + h[1] + ' из ' + D.SURAH_AYAHS[i] + '</span>' : '';
       const tf = fr > 0 ? '<span class="qs-tf' + (fr >= 1 ? ' done' : '') + '"><i><b style="width:' + Math.round(fr * 100) + '%"></b></i>' + (fr >= 1 ? 'тафсир прочитан' : 'тафсир: ' + Math.max(1, Math.floor(fr * 100)) + '%') + '</span>' : '';
-      out.push('<button class="list-row" data-a="read" data-v="' + n + ':1">' + STAR(n) + '<span class="col grow" style="gap:2px;min-width:0"><span style="font-size:15px;font-weight:800">' + ru + '</span><span class="small sub">' + ayahsLabel(D.SURAH_AYAHS[i]) + ' · ' + pagesLabel(n) + '</span>' + tf + '</span><span class="qs-ar" lang="ar" dir="rtl">' + D.SURAH_AR[i] + '</span></button>');
+      out.push('<button class="list-row" data-a="read" data-v="' + n + ':1">' + STAR(n) + '<span class="col grow" style="gap:2px;min-width:0"><span style="font-size:15px;font-weight:800">' + ru + '</span><span class="small sub">' + ayahsLabel(D.SURAH_AYAHS[i]) + ' · ' + pagesLabel(n) + '</span>' + tf + hz + '</span><span class="qs-ar" lang="ar" dir="rtl">' + D.SURAH_AR[i] + '</span></button>');
     });
     return out.length ? '<div class="card list" style="overflow:hidden">' + out.join('') + '</div>' : '<div class="card empty"><span class="small sub">Ничего не нашлось. Попробуйте номер суры или «2:255».</span></div>';
   }
@@ -971,7 +979,7 @@
     const s = R.s, nav = [];
     if (s > 1) nav.push('<button class="btn ghost sm grow" data-a="qGo" data-v="' + (s - 1) + ':1">← ' + D.SURAH_RU[s - 2] + '</button>');
     if (s < 114) nav.push('<button class="btn gold sm grow" data-a="qGo" data-v="' + (s + 1) + ':1">' + D.SURAH_RU[s] + ' →</button>');
-    return '<div class="row qnext">' + nav.join('') + '</div>';
+    return vQgReader(R) + '<div class="row qnext">' + nav.join('') + '</div>';
   }
   function vQPill(R) {
     const tp = R.mode === 'tf' && !R.loading ? tfPlan() : null;
@@ -1884,6 +1892,347 @@
     return out.join('');
   }
 
+  /* ===== цели по Корану и заучивание наизусть (v13) =====
+     Цель считается сурами: «прочитать» (на арабском, в переводе или с тафсиром) или «выучить наизусть». Целей может быть несколько сразу.
+     Отмечать суры можно в читалке (в конце суры) и вручную — например, когда читаете по бумажному мусхафу.
+     Срок необязателен. Если он есть, план распределяется по объёму сур (числу букв), а не поровну по сурам: аль-Бакара больше ан-Нас.
+     Выученные суры возвращаются на повторение через растущие промежутки (1, 3, 7, 14, 30, 60 дней); если были ошибки — снова завтра.
+     Данные — ключи qg (цели) и hz (суры наизусть) в облаке Telegram. В таблицу и бота пока не передаются. */
+  // объём каждой суры: число арабских букв / 10 (посчитано по тексту мусхафа в папке quran/)
+  const QW = [14,2590,1475,1608,1203,1256,1424,535,1094,751,772,720,349,349,283,771,656,649,387,533,498,524,440,566,383,556,474,586,425,343,213,154,567,354,318,302,382,302,478,504,333,347,355,145,205,263,239,248,151,149,152,130,142,146,166,172,250,201,193,154,95,76,79,107,118,107,133,126,111,95,95,110,85,103,67,108,82,78,77,55,43,33,75,44,46,25,30,38,58,34,25,31,16,10,16,29,11,40,16,16,16,13,7,14,10,8,11,4,10,8,8,5,7,8];
+  const QW_PAGE = 54; // столько единиц объёма в одной странице мусхафа (≈ 540 букв)
+  const HZ_INT = [1, 3, 7, 14, 30, 60];
+  const QG_MODE = { ar: 'на арабском', tr: 'в переводе', tf: 'с тафсиром' };
+  const QG_MAX = 12;
+  const diffDays = (a, b) => Math.round((dateOfKey(b) - dateOfKey(a)) / 864e5);
+  const fmtDateY = (k) => fmtDate(k) + (k.slice(0, 4) !== todayKey().slice(0, 4) ? ' ' + k.slice(0, 4) : '');
+  const surahsLabel = (n) => n + ' ' + plural(n, 'сура', 'суры', 'сур');
+  const ofSurahs = (n) => n + ' ' + (n % 10 === 1 && n % 100 !== 11 ? 'суры' : 'сур'); // «3 из 37 сур», «1 из 1 суры»
+  const qgList = () => (S.qg && S.qg.g) || [];
+  // поиск суры без учёта дефисов, пробелов и «йа/я»: «ясин» находит «Йа Син», «мульк» — «Аль-Мульк»
+  const sNorm = (x) => String(x || '').toLowerCase().replace(/ё/g, 'е').replace(/[^а-яa-z0-9]/g, '').replace(/йа/g, 'я').replace(/йу/g, 'ю');
+  const qgById = (id) => qgList().find((g) => g.id === id);
+  const qgNewId = () => { let id; do { id = 'g' + Date.now().toString(36).slice(-6) + Math.random().toString(36).slice(2, 4); } while (qgById(id)); return id; };
+  const qgShown = () => qgList().filter((g) => !g.fin || g.fin === todayKey());
+  const qgOld = () => qgList().filter((g) => g.fin && g.fin !== todayKey());
+  const qgMode = (g) => (g.m === 'tf' && !sai() ? 'tr' : g.m || 'ar');
+  const hzOf = (s) => (S.hz && S.hz.s[s]) || [0, 0, 0, ''];
+  const qgDone = (g, s) => (g.k === 'hifz' ? hzOf(s)[0] === 2 : bitHas(g.d, s));
+  function bitHas(h, s) { const i = s - 1, c = parseInt((h || '').charAt(i >> 2) || '0', 16); return !!(c & (1 << (i & 3))); }
+  function bitPut(h, s, on) {
+    h = (h || '').padEnd(29, '0');
+    const i = s - 1, j = i >> 2, c = parseInt(h.charAt(j), 16) || 0, n = on ? c | (1 << (i & 3)) : c & ~(1 << (i & 3));
+    return h.slice(0, j) + n.toString(16) + h.slice(j + 1);
+  }
+  function saveQg() {
+    S.qg.u = nowSec();
+    // в облаке Telegram на ключ — до 4 096 знаков: если не помещается, убираем самые старые выполненные цели
+    while (JSON.stringify(S.qg).length > 3900) {
+      const i = S.qg.g.findIndex((g) => g.fin);
+      if (i < 0) break;
+      S.qg.g.splice(i, 1);
+    }
+    dirty.qg = true; dataVer++; schedule();
+  }
+  function saveHz() { S.hz.u = nowSec(); dirty.hz = true; dataVer++; schedule(); }
+  function qgSurahs(g) {
+    const sc = g.sc || 'all'; let out = [];
+    if (sc === 'all') for (let s = 1; s <= 114; s++) out.push(s);
+    else if (sc.slice(0, 2) === 'r:') { const p = sc.slice(2).split('-'), a = clamp(+p[0] || 1, 1, 114), b = clamp(+p[1] || 114, a, 114); for (let s = a; s <= b; s++) out.push(s); }
+    else out = Array.from(new Set(sc.slice(2).split(',').map(Number).filter((s) => s >= 1 && s <= 114))).sort((x, y) => x - y);
+    if (g.rev) out.reverse();
+    return out;
+  }
+  function qgScopeLabel(g) {
+    const sc = g.sc || 'all';
+    if (sc === 'all') return 'весь Коран';
+    if (sc === 'r:78-114') return 'джуз Амма';
+    const L = qgSurahs({ sc });
+    if (L.length === 1) return D.SURAH_RU[L[0] - 1];
+    if (sc.slice(0, 2) === 'r:') return 'суры ' + L[0] + '–' + L[L.length - 1];
+    if (L.length <= 3) return L.map((s) => D.SURAH_RU[s - 1]).join(', ');
+    return surahsLabel(L.length);
+  }
+  function qgTitle(g) {
+    if (g.t) return g.t;
+    if (g.k === 'hifz') return 'Наизусть: ' + qgScopeLabel(g);
+    if ((g.sc || 'all') === 'all') return { ar: 'Хатм Корана', tr: 'Весь Коран в переводе', tf: 'Весь Коран с тафсиром' }[g.m] || 'Хатм Корана';
+    return 'Прочитать: ' + qgScopeLabel(g);
+  }
+  function qgStat(g) {
+    const list = qgSurahs(g), t = todayKey();
+    let wAll = 0, wDone = 0, n = 0, next = 0, learn = 0;
+    list.forEach((s) => {
+      const w = QW[s - 1]; wAll += w;
+      if (qgDone(g, s)) { wDone += w; n++; return; }
+      if (g.k === 'hifz') { const h = hzOf(s); if (h[0] === 1) { wDone += w * clamp(h[1] / D.SURAH_AYAHS[s - 1], 0, 0.99); if (!learn) learn = s; } }
+      if (!next) next = s;
+    });
+    const st = { list, total: list.length, n, wAll, wDone, frac: wAll ? wDone / wAll : 0, next, learn, done: list.length > 0 && n === list.length };
+    if (g.dl && !st.done) {
+      // план идёт от ps (начало плана или день смены срока) и делит только то, что оставалось на тот день (b)
+      const ps = g.ps || g.st, b = Math.min(g.b || 0, wAll);
+      const days = Math.max(1, diffDays(ps, g.dl) + 1), el = clamp(diffDays(ps, t) + 1, 0, days);
+      st.days = days; st.di = el; st.over = t > g.dl; st.left = Math.max(1, diffDays(t, g.dl) + 1);
+      st.target = b + (wAll - b) * el / days; st.prev = b + (wAll - b) * Math.max(0, el - 1) / days;
+      let cum = 0; st.plan = list[list.length - 1];
+      for (const s of list) { cum += QW[s - 1]; if (cum >= st.target - 0.5) { st.plan = s; break; } }
+      st.ok = wDone >= st.target - 0.5;
+      st.ahead = wDone - st.target;
+      if (g.k === 'hifz') {
+        let ay = 0; list.forEach((s) => { const h = hzOf(s); if (h[0] !== 2) ay += D.SURAH_AYAHS[s - 1] - (h[0] === 1 ? h[1] : 0); });
+        st.ayDay = Math.max(1, Math.ceil(ay / st.left));
+      } else st.pgDay = (wAll - wDone) / st.left / QW_PAGE;
+    }
+    return st;
+  }
+  const pagesApprox = (w) => { const p = w / QW_PAGE; return p < 0.75 ? 'меньше страницы' : '≈ ' + Math.max(1, Math.round(p)) + ' стр.'; };
+  const pgDayLabel = (p) => '≈ ' + (p < 3 ? String(Math.max(0.1, Math.round(p * 10) / 10)).replace('.', ',') : Math.round(p)) + ' стр. в день';
+  function qgPlanLine(g, st) {
+    if (!st.days) return '';
+    const name = '«' + D.SURAH_RU[st.plan - 1] + '»';
+    if (st.over) return 'Срок прошёл ' + fmtDateY(g.dl) + '. Можно продлить его — главное продолжать.';
+    if (st.ahead > (st.target - st.prev)) return 'Вы опережаете план. МашаАллах — можно идти в своём темпе.';
+    if (st.ok) return 'Сегодня вы по плану.';
+    if (st.wDone >= st.prev - 0.5) return 'Сегодня по плану — ' + (g.k === 'hifz' ? 'выучить до ' : 'дочитать до ') + name + ' включительно.';
+    return 'Чтобы успеть к ' + fmtDateY(g.dl) + ', ' + (g.k === 'hifz' ? 'нужно ' + st.ayDay + ' ' + plural(st.ayDay, 'аят', 'аята', 'аятов') + ' в день' : 'нужно ' + pgDayLabel(st.pgDay)) + '. Это нормально — главное продолжать.';
+  }
+  function qgCheckFin(g) {
+    const st = qgStat(g);
+    if (st.done && !g.fin) { g.fin = todayKey(); return 1; }
+    if (!st.done && g.fin) g.fin = '';
+    return 0;
+  }
+  function qgFinished(n) { if (!n) return; haptic('notify', 'success'); toast(n > 1 ? 'Цели выполнены — МашаАллах!' : 'Цель выполнена — МашаАллах! Пусть Аллах примет'); }
+  /* наизусть: [состояние 0 — не начата, 1 — учу, 2 — выучена; выучено аятов; ступень повторения; день последнего повторения] */
+  const hzNext = (h) => (h[3] ? addDays(h[3], HZ_INT[clamp(h[2] || 0, 0, HZ_INT.length - 1)]) : todayKey());
+  function hzDue() {
+    const t = todayKey(), out = [];
+    Object.keys((S.hz && S.hz.s) || {}).forEach((k) => { const h = S.hz.s[k]; if (h[0] === 2 && hzNext(h) <= t) out.push(+k); });
+    return out.sort((a, b) => (hzNext(hzOf(a)) < hzNext(hzOf(b)) ? -1 : hzNext(hzOf(a)) > hzNext(hzOf(b)) ? 1 : a - b));
+  }
+  const hzRevToday = () => (S.hz && S.hz.rv && S.hz.rv.k === todayKey() ? S.hz.rv.n : 0);
+  function hzPut(s, h) {
+    const was = hzOf(s)[0];
+    if (!h || !h[0]) delete S.hz.s[s]; else S.hz.s[s] = h;
+    saveHz();
+    let fin = 0, ch = false;
+    qgList().forEach((g) => { if (g.k !== 'hifz') return; const f = g.fin; fin += qgCheckFin(g); if (f !== g.fin) ch = true; });
+    if (ch) saveQg();
+    if (h && h[0] === 2 && was !== 2 && !fin) { haptic('notify', 'success'); toast('Сура выучена — МашаАллах! Повторение — завтра'); }
+    qgFinished(fin);
+  }
+  const hzOkIn = (h) => { const d = HZ_INT[Math.min(HZ_INT.length - 1, (h[2] || 0) + 1)]; return '«Помню» — снова через ' + d + ' ' + plural(d, 'день', 'дня', 'дней'); };
+  function hzNames(list, max) { const n = list.slice(0, max || 2).map((s) => D.SURAH_RU[s - 1]).join(', '); return list.length > (max || 2) ? n + ' и ещё ' + (list.length - (max || 2)) : n; }
+
+  /* ----- раздел «Мои цели» во вкладке «Коран» ----- */
+  function vQGoals() {
+    const shown = qgShown(), old = qgOld(), due = hzDue();
+    if (!shown.length && !old.length && !due.length) {
+      return '<button class="card pad tf-cont" data-a="sheet" data-v="qgNew"><span class="rd-ico">' + QG_ICON + '</span><span class="col grow" style="gap:3px"><span style="font-size:15px;font-weight:800">Цели по Корану</span><span class="small sub">Прочитать весь Коран или выбранные суры, выучить суры наизусть — отмечайте в приложении или по бумажному мусхафу</span></span>' + I.chev + '</button>';
+    }
+    const rows = [];
+    if (due.length) rows.push('<button class="li" data-a="sheet" data-v="hzRev"><span class="qg-ic rev">' + HZ_ICON + '</span><span class="li-c"><span class="li-t">Повторить наизусть</span><span class="li-m">' + surahsLabel(due.length) + ': ' + hzNames(due) + '</span></span>' + I.chev + '</button>');
+    shown.forEach((g) => {
+      const st = qgStat(g), fin = !!g.fin;
+      let m;
+      if (fin) m = 'Выполнена сегодня · ' + surahsLabel(st.total);
+      else if (g.k === 'hifz') { const h = st.learn ? hzOf(st.learn) : null; m = 'Выучено ' + st.n + ' из ' + st.total + (h ? ' · учу ' + D.SURAH_RU[st.learn - 1] + ', ' + h[1] + ' из ' + D.SURAH_AYAHS[st.learn - 1] : st.next ? ' · дальше ' + D.SURAH_RU[st.next - 1] : ''); }
+      else m = st.n + ' из ' + ofSurahs(st.total) + (st.next ? ' · дальше ' + D.SURAH_RU[st.next - 1] : '');
+      if (!fin && g.dl) m += ' · до ' + fmtDateY(g.dl);
+      rows.push('<button class="li" data-a="sheet" data-v="qg:' + g.id + '">' + ringSvg(44, fin ? 1 : st.frac, fin, fin ? I.check : '') + '<span class="li-c"><span class="li-t">' + esc(qgTitle(g)) + '</span><span class="li-m">' + m + '</span></span>' + I.chev + '</button>');
+    });
+    if (old.length) rows.push('<button class="li" data-a="sheet" data-v="qgDone"><span class="qg-ic done">' + I.check + '</span><span class="li-c"><span class="li-t">Выполненные цели</span></span><span class="li-val num">' + old.length + '</span>' + I.chev + '</button>');
+    return '<section class="sec" aria-label="Мои цели"><div class="sec-h ctr"><h2 class="h2">Мои цели</h2>' + (qgList().filter((g) => !g.fin).length < QG_MAX ? '<button class="sec-a" data-a="sheet" data-v="qgNew">' + I.plus + 'Новая</button>' : '') + '</div><div class="card list">' + rows.join('') + '</div></section>';
+  }
+  const QG_ICON = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="0.8" fill="currentColor"/></svg>';
+  const HZ_ICON = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v3.2h3.2"/><path d="M12 8.5V12l2.5 1.6"/></svg>';
+
+  /* ----- новая цель ----- */
+  function qgDraft(sh) {
+    const k = sh.k || 'read', sc = sh.sc || 'all';
+    let scope = 'all';
+    if (sc === 'amma') scope = 'r:78-114';
+    else if (sc === 'range') { let a = clamp(+sh.from || 1, 1, 114), b = clamp(+sh.to || 114, 1, 114); if (a > b) { const x = a; a = b; b = x; } scope = a === 1 && b === 114 ? 'all' : 'r:' + a + '-' + b; }
+    else if (sc === 'pick') scope = 'l:' + (sh.pick || []).slice().sort((x, y) => x - y).join(',');
+    const t = todayKey();
+    let dl = '';
+    if (sh.dl === 'days') dl = addDays(t, (+sh.days || 90) - 1);
+    else if (sh.dl === 'date' && /^\d{8}$/.test(sh.date || '') && sh.date > t) dl = sh.date;
+    const rev = k === 'hifz' ? (sh.rev == null ? sc === 'amma' : !!sh.rev) : false;
+    return { k, m: k === 'read' ? (sh.m || 'ar') : '', sc: scope, rev: rev ? 1 : 0, st: t, dl, d: '', fin: '', t: (sh.t || '').trim().slice(0, 50) };
+  }
+  function vQgDl(sh) {
+    const dl = sh.dl || 'none', days = +sh.days || 90, t = todayKey();
+    return '<div class="sh-sec">Срок</div><div class="seg mini" role="group" aria-label="Срок">' + [['none', 'Без срока'], ['days', 'За N дней'], ['date', 'До даты']].map((x) => '<button class="' + (dl === x[0] ? 'on' : '') + '" data-a="qgSet" data-v="dl:' + x[0] + '" aria-pressed="' + (dl === x[0]) + '">' + x[1] + '</button>').join('') + '</div>' +
+      (dl === 'days' ? '<div class="qg-chips" role="group" aria-label="Сколько дней">' + [[30, '30 дней'], [60, '60 дней'], [90, '90 дней'], [180, 'полгода'], [365, 'год']].map((x) => '<button class="qg-chip' + (days === x[0] ? ' on' : '') + '" data-a="qgSet" data-v="days:' + x[0] + '" aria-pressed="' + (days === x[0]) + '">' + x[1] + '</button>').join('') + '</div>' : '') +
+      (dl === 'date' ? '<label class="search"><span class="sr">Дата окончания</span><input type="date" data-in="qgDate" min="' + addDays(t, 1).replace(/(\d{4})(\d\d)(\d\d)/, '$1-$2-$3') + '" value="' + (sh.date ? sh.date.replace(/(\d{4})(\d\d)(\d\d)/, '$1-$2-$3') : '') + '"></label>' : '');
+  }
+  function vQgNew(sh, head, opt) {
+    const k = sh.k || 'read', sc = sh.sc || 'all', m = sh.m || 'ar', g = qgDraft(sh), st = qgStat(g), t = todayKey();
+    const out = [head('Новая цель', 'Цель считается сурами. Можно поставить несколько целей сразу')];
+    out.push('<div class="seg" role="group" aria-label="Что сделать"><button class="' + (k === 'read' ? 'on' : '') + '" data-a="qgSet" data-v="k:read" aria-pressed="' + (k === 'read') + '">Прочитать</button><button class="' + (k === 'hifz' ? 'on' : '') + '" data-a="qgSet" data-v="k:hifz" aria-pressed="' + (k === 'hifz') + '">Выучить наизусть</button></div>');
+    if (k === 'read') out.push('<div class="sh-sec">Как читать</div><div class="seg mini" role="group" aria-label="Как читать">' + [['ar', 'Арабский'], ['tr', 'Перевод'], ['tf', 'Тафсир']].filter((x) => x[0] !== 'tf' || sai()).map((x) => '<button class="' + (m === x[0] ? 'on' : '') + '" data-a="qgSet" data-v="m:' + x[0] + '" aria-pressed="' + (m === x[0]) + '">' + x[1] + '</button>').join('') + '</div>');
+    out.push('<div class="sh-sec">Какие суры</div>');
+    out.push(opt('qgSet', 'sc:all', sc === 'all', 'Весь Коран', '114 сур · 604 страницы'));
+    out.push(opt('qgSet', 'sc:amma', sc === 'amma', 'Джуз Амма', 'Суры 78–114 · 37 сур, короткие — с них обычно начинают'));
+    out.push(opt('qgSet', 'sc:range', sc === 'range', 'Подряд: с суры по суру', 'Например, первые пять сур или весь второй джуз'));
+    if (sc === 'range') {
+      const sel = (key, val) => '<select data-in="' + key + '" aria-label="' + (key === 'qgFrom' ? 'С суры' : 'По суру') + '">' + D.SURAH_RU.map((ru, i) => '<option value="' + (i + 1) + '"' + (val === i + 1 ? ' selected' : '') + '>' + (i + 1) + '. ' + ru + '</option>').join('') + '</select>';
+      out.push('<div class="qg-range"><label><span>с</span>' + sel('qgFrom', clamp(+sh.from || 1, 1, 114)) + '</label><label><span>по</span>' + sel('qgTo', clamp(+sh.to || 114, 1, 114)) + '</label></div>');
+    }
+    out.push(opt('qgSet', 'sc:pick', sc === 'pick', 'Выбрать суры', (sh.pick || []).length ? 'Выбрано: ' + hzNames((sh.pick || []).slice().sort((a, b) => a - b), 3) : 'Например, Йа Син, Аль-Мульк и Аль-Кахф'));
+    if (sc === 'pick') {
+      const f = sNorm(sh.q), pick = sh.pick || [];
+      const rows = D.SURAH_RU.map((ru, i) => {
+        const s = i + 1;
+        if (f && String(s) !== f && sNorm(ru).indexOf(f) < 0) return '';
+        const on = pick.indexOf(s) >= 0;
+        return '<button class="li qg-s" data-a="qgPick" data-v="' + s + '" aria-pressed="' + on + '"><span class="qg-n num">' + s + '</span><span class="li-c"><span class="li-t">' + ru + '</span><span class="li-m">' + ayahsLabel(D.SURAH_AYAHS[i]) + ' · ' + pagesLabel(s) + '</span></span><span class="ck2' + (on ? ' st-done' : '') + '">' + (on ? I.st.done : '') + '</span></button>';
+      }).join('');
+      out.push('<label class="search">' + I.search + '<span class="sr">Найти суру</span><input type="search" data-in="qgPickQ" placeholder="Найти суру" value="' + esc(sh.q || '') + '" autocomplete="off"></label>');
+      out.push('<div class="card list qg-pick">' + (rows || '<div class="li"><span class="li-m">Ничего не нашлось</span></div>') + '</div>');
+    }
+    if (k === 'hifz') {
+      const rev = !!g.rev;
+      out.push('<div class="x-row qg-x"><span class="col grow"><span style="font-size:15px;font-weight:700">Учить с конца</span><span class="small sub">От ан-Нас к началу — сначала короткие суры</span></span><button class="switch" role="switch" aria-checked="' + rev + '" aria-label="Учить с конца" data-a="qgSet" data-v="rev:' + (rev ? 0 : 1) + '"><i></i></button></div>');
+    }
+    out.push(vQgDl(sh));
+    const pre = k === 'hifz' ? st.list.filter((s) => hzOf(s)[0] === 2).length : 0;
+    const big = st.total ? surahsLabel(st.total) : 'Выберите суры';
+    const line = !st.total ? 'Отметьте хотя бы одну суру' : sh.dl === 'date' && !g.dl ? pagesApprox(st.wAll) + ' · выберите дату окончания' : pagesApprox(st.wAll) + (g.dl ? ' · до ' + fmtDateY(g.dl) + ' · ' + (k === 'hifz' ? '≈ ' + st.ayDay + ' ' + plural(st.ayDay, 'аят', 'аята', 'аятов') + ' в день' : pgDayLabel(st.pgDay)) : ' · без срока, в своём темпе');
+    out.push('<div class="card pad qg-sum"><span class="qg-big num">' + big + '</span><span class="small sub">' + line + '</span>' + (pre ? '<span class="small" style="color:var(--emerald-text);font-weight:700">' + surahsLabel(pre) + ' вы уже знаете — они засчитаются сразу</span>' : '') + '</div>');
+    out.push('<label class="search"><span class="sr">Название цели</span><input data-in="qgTitle" maxlength="50" placeholder="Название: ' + esc(qgTitle(Object.assign({}, g, { t: '' }))) + '" value="' + esc(sh.t || '') + '"></label>');
+    out.push('<button class="btn gold block" data-a="qgCreate"' + (st.total ? '' : ' disabled') + '>Поставить цель с намерением</button><button class="btn ghost block" data-a="closeSheet">Не сейчас</button>');
+    return out.join('');
+  }
+
+  /* ----- шторка цели ----- */
+  function vQgSheet(sh, head, opt) {
+    const g = qgById(sh.id);
+    if (!g) return head('Цель удалена', '') + '<button class="btn gold block" data-a="closeSheet">Готово</button>';
+    const st = qgStat(g), hz = g.k === 'hifz', out = [];
+    out.push(head(esc(qgTitle(g)), (hz ? 'наизусть' : 'чтение ' + QG_MODE[qgMode(g)]) + ' · ' + qgScopeLabel(g) + (g.dl ? ' · до ' + fmtDateY(g.dl) : '') + ' · с ' + fmtDateY(g.st)));
+    const plan = qgPlanLine(g, st);
+    out.push('<div class="card pad qg-sum">' +
+      '<div class="between" style="align-items:flex-end"><span class="qg-big num' + (st.done ? ' ok' : '') + '">' + (st.done ? 'Цель выполнена' : (hz ? 'Выучено ' : '') + st.n + ' из ' + ofSurahs(st.total)) + '</span><span class="small num" style="font-weight:800">' + Math.floor(st.frac * 100) + '%</span></div>' +
+      '<span class="bar" style="height:8px"><span style="width:' + (st.frac * 100).toFixed(1) + '%' + (st.done ? ';background:var(--emerald)' : '') + '"></span></span>' +
+      '<span class="small sub">' + (st.done ? (g.fin ? fmtDateY(g.fin) + ' · ' : '') + surahsLabel(st.total) + ' · ' + pagesApprox(st.wAll) + '. Пусть Аллах примет и сделает Коран свидетелем за вас.' : 'Процент — по объёму: длинные суры весят больше коротких · осталось ' + pagesApprox(st.wAll - st.wDone)) + '</span>' +
+      (plan && !st.done ? '<span class="small" style="font-weight:700;line-height:1.45">' + plan + '</span>' : '') + '</div>');
+    if (st.done) {
+      out.push(hz ? '<button class="btn ghost block" data-a="sheet" data-v="hzRev">' + HZ_ICON + 'Повторение наизусть</button>' : '<button class="btn gold block" data-a="qgAgain" data-v="' + g.id + '">Начать заново</button>');
+    } else if (hz) {
+      const learning = st.list.filter((s) => hzOf(s)[0] === 1), due = hzDue().filter((s) => st.list.indexOf(s) >= 0);
+      if (learning.length) out.push('<div class="sh-sec">Сейчас учу</div><div class="card list">' + learning.map((s) => hzRow(s, g.id)).join('') + '</div>');
+      else if (st.next) out.push('<button class="btn gold block" data-a="hzStart" data-v="' + st.next + ':' + g.id + '">' + HZ_ICON + 'Начать учить «' + D.SURAH_RU[st.next - 1] + '»</button>');
+      if (due.length) out.push('<button class="btn ghost block" data-a="sheet" data-v="hzRev">' + HZ_ICON + 'Повторить сегодня: ' + surahsLabel(due.length) + '</button>');
+    } else if (st.next) {
+      out.push('<button class="btn gold block" data-a="qgOpen" data-v="' + g.id + '">' + READ_ICON + 'Читать «' + D.SURAH_RU[st.next - 1] + '»</button>');
+      out.push('<span class="small sub" style="padding:0 6px;line-height:1.5">В приложении в конце суры нажмите «Сура прочитана». Читаете по бумажному мусхафу — отмечайте суры ниже.</span>');
+      if (st.total > 3) {
+        out.push('<label class="qg-upto"><span>Прочитал по мусхафу до суры</span><select data-in="qgUpTo" data-g="' + g.id + '" aria-label="Отметить прочитанными все суры до выбранной"><option value="">выбрать…</option>' + st.list.map((s) => '<option value="' + s + '">' + s + '. ' + D.SURAH_RU[s - 1] + '</option>').join('') + '</select></label>');
+      }
+    }
+    out.push('<div class="sh-sec">' + (hz ? 'Суры цели' : 'Суры') + ' · ' + st.n + ' из ' + ofSurahs(st.total) + '</div>');
+    out.push('<div class="card list">' + st.list.map((s) => hz ? hzRow(s, g.id) : '<button class="li qg-s" data-a="qgTog" data-v="' + g.id + ':' + s + '" aria-pressed="' + bitHas(g.d, s) + '"><span class="qg-n num">' + s + '</span><span class="li-c"><span class="li-t">' + D.SURAH_RU[s - 1] + '</span><span class="li-m">' + ayahsLabel(D.SURAH_AYAHS[s - 1]) + ' · ' + pagesLabel(s) + '</span></span><span class="ck2' + (bitHas(g.d, s) ? ' st-done' : '') + '">' + (bitHas(g.d, s) ? I.st.done : '') + '</span></button>').join('') + '</div>');
+    if (sh.edit) {
+      out.push(vQgDl(sh) + '<button class="btn gold block" data-a="qgSaveDl" data-v="' + g.id + '">Сохранить срок</button>');
+    } else if (!st.done) out.push('<button class="btn ghost block" data-a="qgEdit" data-v="' + g.id + '">' + (g.dl ? 'Изменить срок' : 'Поставить срок') + '</button>');
+    out.push(sh.del ? '<button class="btn block" style="background:var(--rose-soft);color:var(--rose)" data-a="qgDel" data-v="' + g.id + '">Точно удалить цель?' + (hz ? ' Выученные суры останутся' : '') + '</button>' : '<button class="btn quiet block" data-a="qgDel" data-v="' + g.id + '">Удалить цель</button>');
+    out.push('<button class="btn gold block" data-a="closeSheet">Готово</button>');
+    return out.join('');
+  }
+  function hzRow(s, gid) {
+    const h = hzOf(s), n = D.SURAH_AYAHS[s - 1];
+    const right = h[0] === 2 ? '<span class="ck2 st-done">' + I.st.done + '</span>' : h[0] === 1 ? '<span class="li-v"><b class="num">' + h[1] + ' из ' + n + '</b><i><s style="width:' + Math.round(h[1] / n * 100) + '%"></s></i></span>' : '<span class="ck2"></span>';
+    const m = h[0] === 2 ? 'выучена · повторение ' + (hzNext(h) <= todayKey() ? 'сегодня' : fmtDate(hzNext(h))) : h[0] === 1 ? 'учу сейчас · ' + ayahsLabel(n) : ayahsLabel(n) + ' · ' + pagesLabel(s);
+    return '<button class="li qg-s" data-a="sheet" data-v="hzS:' + s + (gid ? '@' + gid : '') + '"><span class="qg-n num">' + s + '</span><span class="li-c"><span class="li-t">' + D.SURAH_RU[s - 1] + '</span><span class="li-m">' + m + '</span></span>' + right + '</button>';
+  }
+
+  /* ----- шторка суры наизусть ----- */
+  function vHzSheet(sh, head, opt) {
+    const p = String(sh.id || '').split('@'), s = clamp(+p[0] || 1, 1, 114), gid = p[1] || '', h = hzOf(s), n = D.SURAH_AYAHS[s - 1], t = todayKey();
+    const out = [head(s + '. ' + D.SURAH_RU[s - 1], 'наизусть · ' + ayahsLabel(n) + ' · ' + pagesLabel(s))];
+    out.push(opt('hzSet', s + ':0', h[0] === 0, 'Не начата', ''));
+    out.push(opt('hzSet', s + ':1', h[0] === 1, 'Учу сейчас', 'Отмечайте, сколько аятов уже выучили'));
+    out.push(opt('hzSet', s + ':2', h[0] === 2, 'Выучена', 'Сура вернётся на повторение через 1, 3, 7, 14, 30 и 60 дней'));
+    if (h[0] === 1) {
+      out.push('<div class="card pad qg-sum"><span class="small sub" style="font-weight:700">Выучено аятов</span><span class="qg-big num">' + h[1] + ' из ' + n + '</span><span class="bar" style="height:8px"><span style="width:' + (h[1] / n * 100).toFixed(1) + '%"></span></span>' +
+        '<div class="row" style="gap:8px;flex-wrap:wrap">' + [[1, '+1 аят'], [5, '+5']].filter((x) => x[0] === 1 || n >= 10).map((x) => '<button class="btn gold grow" data-a="hzStep" data-v="' + s + ':' + x[0] + '">' + x[1] + '</button>').join('') + '<button class="btn ghost" data-a="hzStep" data-v="' + s + ':-1" aria-label="Минус один аят">−1</button></div>' +
+        '<span class="small sub" style="line-height:1.45">Когда выучите последний аят, сура перейдёт в «Выученные».</span></div>');
+    }
+    if (h[0] === 2) {
+      const nx = hzNext(h), due = nx <= t;
+      out.push('<div class="card pad qg-sum"><span class="small sub" style="font-weight:700">Повторение</span><span class="qg-big">' + (due ? 'Сегодня' : fmtDateY(nx)) + '</span><span class="small sub">' + (h[3] ? 'последний раз ' + (h[3] === t ? 'сегодня' : fmtDateY(h[3])) + ' · ' : '') + hzOkIn(h) + '</span>' +
+        '<div class="row" style="gap:8px"><button class="btn gold grow" data-a="hzRev" data-v="' + s + ':ok">Повторил — помню</button><button class="btn ghost grow" data-a="hzRev" data-v="' + s + ':err">Есть ошибки</button></div></div>');
+    }
+    out.push('<button class="btn ghost block" data-a="qRd" data-v="' + s + ':' + (h[0] === 1 ? clamp(h[1] + 1, 1, n) : 1) + ':ar">' + READ_ICON + 'Открыть суру в мусхафе</button>');
+    const inG = qgList().filter((g) => g.k === 'hifz' && !g.fin && qgSurahs(g).indexOf(s) >= 0);
+    if (inG.length) out.push('<span class="small sub" style="padding:0 6px">В цели: ' + inG.map((g) => '«' + esc(qgTitle(g)) + '»').join(', ') + '</span>');
+    out.push(gid && qgById(gid) ? '<button class="btn ghost block" data-a="sheet" data-v="qg:' + gid + '">К цели</button>' : '<button class="btn ghost block" data-a="closeSheet">Готово</button>');
+    return out.join('');
+  }
+  function vHzRev(sh, head) {
+    const due = hzDue(), rv = hzRevToday(), out = [head('Повторение наизусть', 'Выученное нужно повторять, чтобы оно не забылось')];
+    if (!due.length) {
+      const all = Object.keys(S.hz.s).map(Number).filter((s) => hzOf(s)[0] === 2).sort((a, b) => (hzNext(hzOf(a)) < hzNext(hzOf(b)) ? -1 : 1));
+      out.push('<div class="card pad qg-sum"><span class="qg-big ok">' + (rv ? 'На сегодня всё' : 'Пока нечего повторять') + '</span><span class="small sub">' + (rv ? 'Повторено сегодня: ' + surahsLabel(rv) + '. ' : '') + (all.length ? 'Следующее: ' + D.SURAH_RU[all[0] - 1] + ' — ' + fmtDateY(hzNext(hzOf(all[0]))) : 'Когда отметите суру выученной, она появится здесь на следующий день') + '</span></div>');
+    } else {
+      if (rv) out.push('<span class="small sub" style="padding:0 6px">Повторено сегодня: ' + surahsLabel(rv) + '</span>');
+      out.push('<div class="card list">' + due.map((s) => {
+        const h = hzOf(s);
+        return '<div class="li col-li hz-rv"><div class="row" style="gap:12px;align-items:center"><span class="qg-n num">' + s + '</span><span class="li-c"><span class="li-t">' + D.SURAH_RU[s - 1] + '</span><span class="li-m">' + ayahsLabel(D.SURAH_AYAHS[s - 1]) + ' · ' + hzOkIn(h) + (hzNext(h) < todayKey() ? ' · ждёт с ' + fmtDate(hzNext(h)) : '') + '</span></span><button class="qg-open" data-a="qRd" data-v="' + s + ':1:ar" aria-label="Открыть суру ' + D.SURAH_RU[s - 1] + '">' + READ_ICON + '</button></div>' +
+          '<div class="row" style="gap:8px"><button class="btn gold sm grow" data-a="hzRev" data-v="' + s + ':ok">Помню</button><button class="btn ghost sm grow" data-a="hzRev" data-v="' + s + ':err">Есть ошибки</button></div></div>';
+      }).join('') + '</div>');
+    }
+    out.push('<span class="small sub" style="padding:2px 6px;line-height:1.5">«Помню» — следующий раз позже: через 1, 3, 7, 14, 30, затем 60 дней. «Есть ошибки» — сура вернётся завтра.</span>');
+    out.push('<button class="btn gold block" data-a="closeSheet">Готово</button>');
+    return out.join('');
+  }
+  function vQgDoneSheet(sh, head) {
+    const old = qgOld().slice().sort((a, b) => (a.fin < b.fin ? 1 : -1));
+    return head('Выполненные цели', 'Пусть Аллах примет') + (old.length ? '<div class="card list">' + old.map((g) => '<button class="li" data-a="sheet" data-v="qg:' + g.id + '"><span class="qg-ic done">' + I.check + '</span><span class="li-c"><span class="li-t">' + esc(qgTitle(g)) + '</span><span class="li-m">' + fmtDateY(g.fin) + ' · ' + surahsLabel(qgSurahs(g).length) + (diffDays(g.st, g.fin) > 0 ? ' · за ' + (diffDays(g.st, g.fin) + 1) + ' ' + plural(diffDays(g.st, g.fin) + 1, 'день', 'дня', 'дней') : '') + '</span></span>' + I.chev + '</button>').join('') + '</div>' : '<div class="small sub">Пока нет</div>') +
+      '<button class="btn gold block" data-a="closeSheet">Готово</button>';
+  }
+  const QG_SHEETS = { qgNew: vQgNew, qg: vQgSheet, hzS: vHzSheet, hzRev: vHzRev, qgDone: vQgDoneSheet };
+
+  /* ----- в читалке: в конце суры ----- */
+  // цели чтения, к которым относится открытая сура: тот же способ чтения (арабский текст в «Переводе» тоже считается арабским)
+  function qgForReader(R) {
+    const s = R.s, r = rd();
+    return qgList().filter((g) => g.k === 'read' && (!g.fin || bitHas(g.d, s)) && qgSurahs(g).indexOf(s) >= 0 && (qgMode(g) === R.mode || (qgMode(g) === 'ar' && R.mode === 'tr' && r.ar)));
+  }
+  function vQgReader(R) {
+    const s = R.s, out = [], gs = qgForReader(R);
+    if (gs.length) {
+      const all = gs.every((g) => bitHas(g.d, s)), names = gs.map((g) => '«' + esc(qgTitle(g)) + '»').join(', ');
+      out.push(all ? '<button class="qg-mk on" data-a="qgRead" data-v="' + s + '" aria-pressed="true"><span class="ck2 st-done">' + I.st.done + '</span><span class="li-c"><span class="li-t">Сура отмечена прочитанной</span><span class="li-m">' + names + ' · нажмите, чтобы снять</span></span></button>'
+        : '<button class="qg-mk" data-a="qgRead" data-v="' + s + '" aria-pressed="false"><span class="ck2"></span><span class="li-c"><span class="li-t">Сура прочитана</span><span class="li-m">отметить в ' + (gs.length > 1 ? 'целях ' : 'цели ') + names + '</span></span></button>');
+    }
+    const h = hzOf(s);
+    if (h[0] === 1) out.push('<button class="qg-mk" data-a="sheet" data-v="hzS:' + s + '"><span class="qg-ic rev">' + HZ_ICON + '</span><span class="li-c"><span class="li-t">Наизусть: учу</span><span class="li-m">выучено ' + h[1] + ' из ' + ayahsLabel(D.SURAH_AYAHS[s - 1]) + '</span></span></button>');
+    else if (h[0] === 2 && hzNext(h) <= todayKey()) out.push('<button class="qg-mk" data-a="sheet" data-v="hzS:' + s + '"><span class="qg-ic rev">' + HZ_ICON + '</span><span class="li-c"><span class="li-t">Повторение наизусть</span><span class="li-m">сегодня пора повторить эту суру</span></span></button>');
+    return out.length ? '<div class="qg-rd">' + out.join('') + '</div>' : '';
+  }
+
+  /* ----- на главной, в «Сегодня ещё» ----- */
+  function qgTodayItems(add, item, ck, meter) {
+    let n = 0, done = 0;
+    const due = hzDue(), rv = hzRevToday();
+    if (due.length || rv) {
+      n++; if (!due.length) done++;
+      add(21, item('sheet', 'hzRev', 'Повторение наизусть', due.length ? hzNames(due) : 'Повторено ' + surahsLabel(rv) + ' · МашаАллах', due.length ? meter(rv + ' из ' + (rv + due.length), rv / (rv + due.length)) : ck(true)));
+    }
+    const withDl = qgList().filter((g) => !g.fin && g.dl).map((g) => ({ g, st: qgStat(g) })).filter((x) => !x.st.done).sort((a, b) => (a.g.dl < b.g.dl ? -1 : 1));
+    const x = withDl[0];
+    if (x) {
+      const g = x.g, st = x.st, ok = st.ok && !st.over; n++; if (ok) done++;
+      const m = st.over ? 'Срок прошёл ' + fmtDate(g.dl) + ' · ' + st.n + ' из ' + ofSurahs(st.total) : ok ? 'Сегодня по плану · ' + st.n + ' из ' + ofSurahs(st.total) : (g.k === 'hifz' ? 'По плану — выучить до ' : 'По плану — дочитать до ') + '«' + D.SURAH_RU[st.plan - 1] + '»';
+      add(28, item('sheet', 'qg:' + g.id, esc(qgTitle(g)), m, ok ? ck(true) : meter(st.n + ' из ' + st.total, st.frac)));
+    }
+    return [n, done];
+  }
+
   function vMore() {
     const out = ['<h1 class="h1">Ещё</h1>'];
     const qb = S.set.lat != null ? qiblaBearing() : null;
@@ -1983,7 +2332,9 @@
     let body = '';
     const head = (title, sub) => '<div class="grab"></div><div class="col" style="padding:6px 6px 4px"><div style="font-family:var(--serif);font-size:28px;font-weight:600;line-height:1.1">' + title + '</div>' + (sub ? '<div class="small sub" style="font-size:13px">' + sub + '</div>' : '') + '</div>';
     const opt = (act, val, on, title, desc, badge, badgeCls) => '<button class="opt' + (on ? ' on' : '') + '" data-a="' + act + '" data-v="' + val + '">' + (badge ? '<span class="opt-pct ' + (badgeCls || '') + '">' + badge + '</span>' : '') + '<span class="col grow"><span style="font-size:15.5px;font-weight:800">' + title + '</span>' + (desc ? '<span class="small sub">' + desc + '</span>' : '') + '</span>' + (on ? '<span style="color:var(--gold)">' + I.check + '</span>' : '') + '</button>';
-    if (sh.type === 'status') {
+    if (QG_SHEETS[sh.type]) {
+      body = QG_SHEETS[sh.type](sh, head, opt);
+    } else if (sh.type === 'status') {
       const k = viewKey(), pr = PRAYERS.find((p) => p.id === sh.id), cur = getDay(k).f[sh.id], T = prayerTimes(k);
       const opts = [['mosque', 'В мечети', 'Джамаатом в мечети — высшая награда', '150%'], ['jamaat', 'Джамаатом', 'Коллективно, вне мечети', '120%']];
       if (sh.id === 'dhuhr' && isFriday(k)) opts.unshift(['juma', 'Джума', 'Пятничный намаз в мечети', '150%']);
@@ -2297,6 +2648,89 @@
     step(v) { const p = v.split(':'), key = p[0], delta = +p[1], cap = +p[2]; const k = viewKey(), d = ensureDay(k); const f = key === 'qiyam' ? 'q' : 'w'; d[f] = clamp((d[f] || 0) + delta, 0, cap); saveDay(k); haptic('select'); render(); },
     sheet(v) { const ci = v.indexOf(':'); if (ci > 0) S.sheet = { type: v.slice(0, ci), id: v.slice(ci + 1) }; else S.sheet = { type: v }; if (v === 'city') { S.city = { q: '', results: [], loading: false, error: '' }; } render(); if (v === 'city') { const n = document.querySelector('[data-in="city"]'); if (n && !('ontouchstart' in window)) n.focus(); } },
     closeSheet() { S.sheet = null; render(); },
+    /* цели по Корану и наизусть */
+    qgSet(v) {
+      const sh = S.sheet; if (!sh) return;
+      const i = v.indexOf(':'), key = v.slice(0, i), val = v.slice(i + 1);
+      if (key === 'days') sh.days = +val;
+      else if (key === 'rev') sh.rev = val === '1';
+      else { sh[key] = val; if (key === 'k') sh.rev = null; }
+      haptic('select'); render();
+    },
+    qgPick(v) { const sh = S.sheet; if (!sh) return; const s = +v, p = sh.pick || (sh.pick = []), i = p.indexOf(s); if (i >= 0) p.splice(i, 1); else p.push(s); haptic('select'); render(); },
+    qgCreate() {
+      const sh = S.sheet || {}, g = qgDraft(sh);
+      if (!qgSurahs(g).length) { toast('Выберите хотя бы одну суру'); return; }
+      if (sh.dl === 'date' && !g.dl) { toast('Выберите дату окончания — позже сегодняшней'); return; }
+      if (qgList().filter((x) => !x.fin).length >= QG_MAX) { toast('Можно до ' + QG_MAX + ' целей одновременно'); return; }
+      g.id = qgNewId();
+      g.b = Math.round(qgStat(g).wDone);
+      ['m', 'dl', 'd', 'fin', 't', 'rev', 'b'].forEach((k) => { if (!g[k]) delete g[k]; });
+      S.qg.g.push(g);
+      const fin = qgCheckFin(g);
+      saveQg(); S.sheet = { type: 'qg', id: g.id }; haptic('notify', 'success'); render();
+      toast(fin ? 'Все суры этой цели вы уже знаете — МашаАллах!' : 'Цель поставлена — пусть Аллах облегчит');
+    },
+    qgTog(v) {
+      const p = v.split(':'), g = qgById(p[0]), s = +p[1]; if (!g) return;
+      g.d = bitPut(g.d, s, !bitHas(g.d, s));
+      const fin = qgCheckFin(g); saveQg(); haptic('select'); render(); qgFinished(fin);
+    },
+    qgRead(v) {
+      const R = S.quran.reader; if (!R || R.s !== +v) return;
+      const s = R.s, gs = qgForReader(R); if (!gs.length) return;
+      const on = !gs.every((g) => bitHas(g.d, s)); let fin = 0;
+      gs.forEach((g) => { g.d = bitPut(g.d, s, on); fin += qgCheckFin(g); });
+      saveQg(); render();
+      if (fin) qgFinished(fin); else if (on) { haptic('notify', 'success'); toast('Сура отмечена — МашаАллах'); } else haptic('select');
+    },
+    qgEdit(id) { const g = qgById(id), sh = S.sheet; if (!g || !sh) return; sh.edit = 1; sh.dl = g.dl ? 'date' : 'days'; sh.date = g.dl || ''; sh.days = 90; render(); },
+    qgSaveDl(id) {
+      const g = qgById(id), sh = S.sheet; if (!g || !sh) return;
+      const t = todayKey(), d = qgDraft(sh);
+      if (sh.dl === 'date' && !d.dl) { toast('Выберите дату — позже сегодняшней'); return; }
+      if (d.dl) { g.dl = d.dl; g.ps = t; g.b = Math.round(qgStat(Object.assign({}, g, { dl: '' })).wDone); } else { delete g.dl; delete g.ps; delete g.b; }
+      saveQg(); sh.edit = 0; haptic('select'); render(); toast(g.dl ? 'Срок — до ' + fmtDateY(g.dl) : 'Без срока, в своём темпе');
+    },
+    qgDel(id) {
+      const sh = S.sheet; if (!sh) return;
+      if (!sh.del) { sh.del = 1; render(); return; }
+      S.qg.g = qgList().filter((g) => g.id !== id); saveQg(); S.sheet = null; render(); toast('Цель удалена');
+    },
+    qgAgain(id) {
+      const g0 = qgById(id); if (!g0) return;
+      const t = todayKey(), g = { id: qgNewId(), k: g0.k, sc: g0.sc, st: t };
+      if (g0.m) g.m = g0.m; if (g0.t) g.t = g0.t; if (g0.rev) g.rev = 1;
+      if (g0.dl) g.dl = addDays(t, Math.max(1, diffDays(g0.ps || g0.st, g0.dl) + 1) - 1);
+      S.qg.g.push(g); saveQg(); S.sheet = { type: 'qg', id: g.id }; haptic('notify', 'success'); render(); toast('Новый круг — пусть Аллах облегчит');
+    },
+    qgOpen(id) { const g = qgById(id); if (!g) return; const st = qgStat(g); S.sheet = null; S.tab = 'quran'; S.quran.filter = ''; openSurah(st.next || st.list[0] || 1, 1, qgMode(g)); },
+    qRd(v) { const p = v.split(':'); S.sheet = null; S.tab = 'quran'; S.quran.filter = ''; openSurah(+p[0], +p[1] || 1, p[2] || 'ar'); },
+    hzStart(v) { const p = v.split(':'), s = +p[0]; if (hzOf(s)[0] === 0) hzPut(s, [1, 0, 0, '']); S.sheet = { type: 'hzS', id: s + (p[1] ? '@' + p[1] : '') }; haptic('select'); render(); },
+    hzSet(v) {
+      const p = v.split(':'), s = +p[0], to = +p[1], h = hzOf(s), n = D.SURAH_AYAHS[s - 1];
+      if (to === h[0]) return;
+      if (to === 0) hzPut(s, null);
+      else if (to === 1) hzPut(s, [1, h[0] === 2 ? 0 : h[1], 0, '']);
+      else hzPut(s, [2, n, 0, todayKey()]);
+      haptic('select'); render();
+    },
+    hzStep(v) {
+      const p = v.split(':'), s = +p[0], h = hzOf(s), n = D.SURAH_AYAHS[s - 1]; if (h[0] !== 1) return;
+      const a = clamp(h[1] + (+p[1] || 0), 0, n);
+      if (a >= n) hzPut(s, [2, n, 0, todayKey()]); else { hzPut(s, [1, a, 0, '']); haptic('select'); }
+      render();
+    },
+    hzRev(v) {
+      const p = v.split(':'), s = +p[0], h = hzOf(s), t = todayKey(); if (h[0] !== 2) return;
+      const ok = p[1] === 'ok';
+      if (ok && h[3] === t && hzNext(h) > t) { toast('Сегодня эта сура уже повторена'); return; }
+      const lv = ok ? Math.min(HZ_INT.length - 1, (h[2] || 0) + 1) : 0;
+      S.hz.rv = { k: t, n: hzRevToday() + 1 };
+      hzPut(s, [2, D.SURAH_AYAHS[s - 1], lv, t]);
+      haptic(ok ? 'notify' : 'select', 'success'); render();
+      toast(ok ? 'Повторено · следующий раз ' + fmtDate(addDays(t, HZ_INT[lv])) : 'Хорошо, повторим завтра');
+    },
     setSky(v) { S.set.sky = v; saveSettings(); haptic('select'); render(); },
     readOfferNo() { S.set.readOffer = 'no'; saveSettings(); render(); },
     readBook(v) { S.sheet.book = v; render(); },
@@ -2514,6 +2948,16 @@
   document.addEventListener('change', (e) => {
     const t = e.target, m = /^iq:(\w+)$/.exec(t.dataset.in || '');
     if (m && /^\d{1,2}:\d{2}/.test(t.value)) { (S.set.iq || (S.set.iq = {}))[m[1]] = t.value.slice(0, 5); haptic('select'); timesChanged(); }
+    const di = t.dataset.in;
+    if ((di === 'qgFrom' || di === 'qgTo') && S.sheet) { S.sheet[di === 'qgFrom' ? 'from' : 'to'] = +t.value || 1; render(); }
+    if (di === 'qgDate' && S.sheet) { S.sheet.date = String(t.value || '').replace(/-/g, ''); render(); }
+    if (di === 'qgUpTo' && t.value) {
+      const g = qgById(t.dataset.g); if (!g) return;
+      const L = qgSurahs(g), i = L.indexOf(+t.value); if (i < 0) return;
+      L.slice(0, i + 1).forEach((s) => { g.d = bitPut(g.d, s, true); });
+      const fin = qgCheckFin(g); saveQg(); render();
+      if (fin) qgFinished(fin); else { haptic('notify', 'success'); toast('Отмечены суры до «' + D.SURAH_RU[+t.value - 1] + '» включительно'); }
+    }
   });
   document.addEventListener('input', (e) => {
     const t = e.target;
@@ -2521,6 +2965,8 @@
     if (t.dataset.in === 'syncUrl') S.syncDraft = t.value;
     if (t.dataset.in === 'rdTitle' && S.sheet) S.sheet.title = t.value;
     if (t.dataset.in === 'rdPages' && S.sheet) S.sheet.pages = +t.value || 0;
+    if (t.dataset.in === 'qgTitle' && S.sheet) S.sheet.t = t.value;
+    if (t.dataset.in === 'qgPickQ' && S.sheet) { S.sheet.q = t.value; const pos = t.selectionStart; render(); const n = document.querySelector('[data-in="qgPickQ"]'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) {} } }
     if (t.dataset.in === 'surah') { S.quran.filter = t.value; const pos = t.selectionStart; render(); const n = document.querySelector('[data-in="surah"]'); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) {} } }
   });
 
@@ -2553,7 +2999,7 @@
     const ov = $('#overlay');
     ov.addEventListener('touchstart', (e) => {
       const sh = e.target.closest && e.target.closest('.sheet');
-      dg = sh && e.touches.length === 1 && !e.target.closest('input, textarea, .rs-steps') ? { sh, y0: e.touches[0].clientY, x0: e.touches[0].clientX, top: sh.scrollTop, dy: 0, on: false, t0: Date.now() } : null;
+      dg = sh && e.touches.length === 1 && !e.target.closest('input, textarea, select, .rs-steps, .qg-pick') ? { sh, y0: e.touches[0].clientY, x0: e.touches[0].clientX, top: sh.scrollTop, dy: 0, on: false, t0: Date.now() } : null;
     }, { passive: true });
     ov.addEventListener('touchmove', (e) => {
       if (!dg) return;
