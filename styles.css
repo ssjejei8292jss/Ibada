@@ -725,3 +725,5 @@ button.card { transition: transform .12s ease; }
 .li-chev.up { transform: rotate(180deg); }
 .qhero-t { font-family: var(--sans); font-size: 18px; font-weight: 800; line-height: 1.25; letter-spacing: -0.01em; }
 .gm-stage .between > .col:last-child { flex: none; text-align: right; }
+/* v12.1: шторка прокручивается целиком — карточки внутри не сжимаются (иначе обрезалась сунна, например «Азкары после намаза» у Фаджра) */
+.sheet > * { flex-shrink: 0; }
