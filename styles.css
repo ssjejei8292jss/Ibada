@@ -809,3 +809,5 @@ button.card { transition: transform .12s ease; }
 .sl-ctl { flex-wrap: wrap; }
 .sl-ctl .seg.mini { flex: 1 1 190px; max-width: none; }
 .sl-ctl .seg.mini button { white-space: nowrap; }
+/* v14.1: пояснение к процентам в шторке статуса */
+.st-note { margin: 2px 0 0; padding: 0 6px; line-height: 1.5; text-align: center; }
