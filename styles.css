@@ -764,3 +764,48 @@ button.card { transition: transform .12s ease; }
 .qg-mk.on { border-color: transparent; background: var(--r-emsoft, var(--emerald-soft)); }
 .qg-mk .qg-ic { width: 32px; height: 32px; background: transparent; color: var(--r-goldhi, var(--gold-hi)); }
 .qg-pick { max-height: min(46vh, 380px); overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+
+/* v14: азкары перед сном */
+.seg.az3 button { font-size: 13px; }
+.sl-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--gold) 14%, var(--surface)) 0%, var(--surface) 60%); }
+.sl-moon { width: 44px; height: 44px; flex: none; border-radius: 22px; display: flex; align-items: center; justify-content: center; background: var(--gold-soft); color: var(--gold-hi); }
+.sl-moon.sm { width: 38px; height: 38px; }
+.sl-moon.sm svg { width: 22px; height: 22px; }
+.sl-h { font-family: var(--serif); font-size: 24px; font-weight: 700; line-height: 1.1; }
+.sl-head .qring small { font-size: 9.5px; }
+.sl-ctl { gap: 10px; }
+.sl-ctl .seg.mini { flex: 1 1 auto; max-width: 240px; }
+.sl-ctl .chip { min-height: 36px; }
+.sl-note { margin: 0; padding: 0 6px; line-height: 1.5; }
+.sl-sec { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-top: 4px; }
+.sl-sec span { font-size: 12px; font-weight: 700; letter-spacing: 0; text-transform: none; color: var(--sub); }
+.sl-t { font-size: 15.5px; font-weight: 800; line-height: 1.3; }
+.sl-fadl { margin: 0; font-size: 13px; line-height: 1.5; color: var(--gold-hi); font-weight: 600; }
+.sl-ar { font-size: 24px; line-height: 2.05; }
+.sl-tr { margin: 0; font-size: 14px; line-height: 1.55; font-style: italic; color: var(--text); opacity: 0.86; }
+.sl-card .btn svg, .sl-undo svg { margin-right: 4px; }
+.sl-undo { background: var(--emerald-soft); color: var(--emerald-text); }
+.card.sl-min { width: 100%; display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-color: color-mix(in srgb, var(--emerald) 40%, transparent); background: color-mix(in srgb, var(--emerald) 6%, var(--surface)); color: inherit; font: inherit; text-align: left; }
+.sl-prep .li { min-height: 56px; }
+.sl-tas { padding: 16px; display: flex; flex-direction: column; gap: 14px; }
+.sl-tas.done { border-color: color-mix(in srgb, var(--emerald) 50%, transparent); background: color-mix(in srgb, var(--emerald) 6%, var(--surface)); }
+.sl-ph { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.sl-phc { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 8px 4px; border-radius: var(--r-sm); background: var(--surface2); color: var(--sub); font-size: 11.5px; text-align: center; }
+.sl-phc b { font-size: 12px; font-weight: 800; color: var(--text); line-height: 1.25; }
+.sl-phc.cur { background: var(--gold-soft); color: var(--gold-hi); box-shadow: inset 0 0 0 1.5px var(--gold); }
+.sl-phc.ok { color: var(--emerald-text); }
+.sl-phc .num { font-weight: 800; display: inline-flex; align-items: center; min-height: 16px; }
+.sl-tap { width: 100%; min-height: 210px; border-radius: 28px; border: 1px solid var(--gold-line); background: radial-gradient(circle at 50% 30%, var(--surface2) 0%, var(--surface) 75%); color: var(--text); font: inherit; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; padding: 16px; touch-action: none; -webkit-tap-highlight-color: transparent; transition: transform 0.08s ease; }
+.sl-tap:active, .sl-tap.pressed { transform: scale(0.98); }
+.sl-tap .ar { font-family: var(--arabic); font-size: 30px; line-height: 1.6; color: var(--gold-hi); }
+.sl-tap-n { font-family: var(--serif); font-size: 64px; font-weight: 600; line-height: 1; }
+.sl-tap .small { color: var(--sub); font-weight: 700; }
+.sl-tas-done { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 56px; border-radius: var(--r-md); background: var(--emerald-soft); color: var(--emerald-text); font-weight: 800; }
+.sl-wake { overflow: hidden; }
+.sl-w { padding: 0 16px 16px; display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--line); padding-top: 14px; }
+.card.sl-link { width: 100%; gap: 12px; color: inherit; font: inherit; text-align: left; }
+.saw { font-family: 'Amiri', var(--arabic); font-size: 1.12em; line-height: 1; font-style: normal; font-weight: 400; }
+.seg.az3 button { white-space: nowrap; padding-left: 4px; padding-right: 4px; font-size: 12.5px; }
+.sl-ctl { flex-wrap: wrap; }
+.sl-ctl .seg.mini { flex: 1 1 190px; max-width: none; }
+.sl-ctl .seg.mini button { white-space: nowrap; }

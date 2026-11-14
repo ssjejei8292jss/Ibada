@@ -228,11 +228,11 @@
   const ON_TIME = { mosque: 1, jamaat: 1, juma: 1, done: 1 };
   const LBL = { mosque: 'В мечети', jamaat: 'Джамаатом', juma: 'Джума', done: 'Сделал', qada: 'Каза', missed: 'Пропущен' };
 
-  const blankDay = () => ({ t: 'n', f: {}, s: {}, q: 0, w: 0, am: [], ae: [], z: [], p: '' });
+  const blankDay = () => ({ t: 'n', f: {}, s: {}, q: 0, w: 0, am: [], ae: [], z: [], p: '', sl: [] });
   function encodeDay(d) {
     const f = PRAYERS.map((p) => F_CODE[d.f[p.id]] || '-').join('');
     const s = SUNNA_KEYS.map((k) => (d.s[k] ? '1' : '0')).join('');
-    return [d.t + f + s, d.q || 0, d.w || 0, (d.am || []).join('.'), (d.ae || []).join('.'), (d.z || []).join('.'), P_CODE[d.p] || '', d.u ? Math.round(d.u / 1000).toString(36) : ''].join('|');
+    return [d.t + f + s, d.q || 0, d.w || 0, (d.am || []).join('.'), (d.ae || []).join('.'), (d.z || []).join('.'), P_CODE[d.p] || '', d.u ? Math.round(d.u / 1000).toString(36) : '', (d.sl || []).some(Boolean) ? d.sl.join('.') : ''].join('|').replace(/\|$/, '');
   }
   function decodeDay(str) {
     const d = blankDay();
@@ -247,10 +247,11 @@
       d.am = nums(parts[3]); d.ae = nums(parts[4]); d.z = nums(parts[5]);
       d.p = P_DECODE[parts[6]] || '';
       d.u = parts[7] ? (parseInt(parts[7], 36) || 0) * 1000 : 0; // когда день последний раз меняли (для слияния между устройствами)
+      d.sl = nums(parts[8]); // азкары перед сном (v14)
     } catch (e) {}
     return d;
   }
-  const isEmptyDay = (d) => !d || (!Object.keys(d.f).length && !Object.keys(d.s).length && !d.q && !d.w && !(d.am || []).some(Boolean) && !(d.ae || []).some(Boolean) && !(d.z || []).some(Boolean) && !d.p && d.t === 'n');
+  const isEmptyDay = (d) => !d || (!Object.keys(d.f).length && !Object.keys(d.s).length && !d.q && !d.w && !(d.am || []).some(Boolean) && !(d.ae || []).some(Boolean) && !(d.z || []).some(Boolean) && !(d.sl || []).some(Boolean) && !d.p && d.t === 'n');
   const halfKey = (k) => 'h_' + k.slice(0, 6) + '_' + (+k.slice(6, 8) <= 15 ? '1' : '2');
   const getDay = (k) => S.days[k] || blankDay();
   const ensureDay = (k) => { if (!S.days[k]) S.days[k] = blankDay(); return S.days[k]; };
@@ -345,7 +346,7 @@
      Менялось и там, и здесь — объединяем отметки: статусы и галочки складываются, счётчики (зикры, азкары) берутся большими. */
   function unionDay(a, c) {
     const d = { t: a.t !== 'n' ? a.t : c.t, f: Object.assign({}, c.f, a.f), s: Object.assign({}, c.s, a.s), q: Math.max(a.q || 0, c.q || 0), w: Math.max(a.w || 0, c.w || 0), p: a.p || c.p || '' };
-    ['am', 'ae', 'z'].forEach((f) => { const x = a[f] || [], y = c[f] || []; d[f] = Array.from({ length: Math.max(x.length, y.length) }, (_, i) => Math.max(x[i] || 0, y[i] || 0)); });
+    ['am', 'ae', 'z', 'sl'].forEach((f) => { const x = a[f] || [], y = c[f] || []; d[f] = Array.from({ length: Math.max(x.length, y.length) }, (_, i) => Math.max(x[i] || 0, y[i] || 0)); });
     d.u = Math.max(a.u || 0, c.u || 0); d.b = c.u || 0;
     return d;
   }
@@ -718,10 +719,15 @@
     const meter = (v, frac) => '<span class="li-v"><b class="num">' + v + '</b><i><s style="width:' + Math.round(clamp(frac, 0, 1) * 100) + '%"></s></i></span>';
     const check = (pr, key, t, m) => { if (!(plan[key] > 0)) return; const on = !!d.s[key]; n++; if (on) done++; add(pr, item('sunna', key, t, m, ck(on), ' aria-pressed="' + on + '"')); };
     if (lvl !== 'start') {
-      const which = defaultAzTab(), list = D.AZKAR[which], cnt = which === 'morning' ? d.am : d.ae;
+      const which = azByTime(), list = D.AZKAR[which], cnt = which === 'morning' ? d.am : d.ae;
       const got = list.filter((a, i) => (cnt[i] || 0) >= a.n).length, all = got === list.length;
       n++; if (all) done++;
       add(10, item('zikr', 'azkar', (which === 'morning' ? 'Утренние' : 'Вечерние') + ' азкары', (which === 'morning' ? 'После Фаджра' : 'После Асра, до Магриба') + (all ? ' · прочитаны' : ''), all ? ck(true) : meter(got + ' из ' + list.length, got / list.length)));
+      if (isToday && isNightNow()) {
+        const sd = getDay(sleepKey()), P = slProgress(sd);
+        n++; if (P.all) done++;
+        add(9, item('sleepAz', '', 'Азкары перед сном', P.all ? 'Прочитаны · спокойной ночи' : (slMin() ? 'Минимум: ' : '') + 'Аят аль-Курси, три суры, 33 · 33 · 34…', P.all ? ck(true) : meter(P.done + ' из ' + P.total, P.total ? P.done / P.total : 0)));
+      }
     }
     const st = isToday ? rState() : null;
     if (st && !st.done) {
@@ -785,12 +791,132 @@
     return parts.join('');
   }
 
-  function defaultAzTab() {
-    if (S.azTab) return S.azTab;
+  // утренние или вечерние — по времени (для главной); во вкладке «Азкары» после Иши и до Фаджра открываются «Перед сном»
+  function azByTime() {
     const T = prayerTimes(todayKey());
     if (T && new Date() >= T.asr) return 'evening';
     if (T && new Date() < T.fajr) return 'evening';
     return T ? 'morning' : (new Date().getHours() >= 15 ? 'evening' : 'morning');
+  }
+  function defaultAzTab() {
+    if (S.azTab) return S.azTab;
+    return isNightNow() ? 'sleep' : azByTime();
+  }
+  const azMorEve = () => { const w = defaultAzTab(); return w === 'sleep' ? azByTime() : w; };
+
+  /* ===== азкары перед сном (v14) =====
+     Подборка и порядок — по документу владельца «Азкары перед сном»; аяты — из текста мусхафа (quran/).
+     Ночь принадлежит дню, после Иши которого она наступила: до Фаджра отметки идут во вчерашний день.
+     Отметки хранятся в дне в поле sl (по номеру пункта D.SLEEP). В итог дня (%) пока не входят, в таблицу не уходят.
+     Подготовка (омовение, постель…) — галочки, в счёт «N из M» не идут. Тасбих 33/33/34 — один пункт из трёх счётчиков,
+     каждое касание добавляется и к общим зикрам дня (Субханаллах, Альхамдулиллях, Аллаху акбар). */
+  function sleepKey() {
+    if (S.viewKey) return S.viewKey;
+    const t = todayKey(), T = prayerTimes(t);
+    if (T ? new Date() < T.fajr : new Date().getHours() < 4) return addDays(t, -1);
+    return t;
+  }
+  const isNightNow = () => { const T = prayerTimes(todayKey()), now = new Date(); return T ? now >= T.isha || now < T.fajr : now.getHours() >= 21 || now.getHours() < 4; };
+  const slMin = () => !!S.set.slMin;
+  const slCnt = (d, i) => ((d.sl || [])[i] || 0);
+  const SL_TAS = [];
+  D.SLEEP.forEach((it, i) => { if (it.kind === 'tasbih') SL_TAS.push(i); });
+  function slUnits() { // из чего складывается «N из M»: каждый пункт, тасбих — один пункт на три счётчика
+    const out = [];
+    D.SLEEP.forEach((it, i) => {
+      if (it.kind === 'prep' || (slMin() && !it.min)) return;
+      if (it.kind === 'tasbih') { if (i === SL_TAS[0]) out.push({ idx: SL_TAS.slice() }); return; }
+      out.push({ idx: [i] });
+    });
+    return out;
+  }
+  const slUnitDone = (d, u) => u.idx.every((i) => slCnt(d, i) >= D.SLEEP[i].n);
+  function slProgress(d) { const U = slUnits(), done = U.filter((u) => slUnitDone(d, u)).length; return { done, total: U.length, all: U.length > 0 && done === U.length }; }
+  const slPrepOn = (d, it, i) => (it.link ? !!(d.s || {})[it.link] : slCnt(d, i) >= 1);
+  const slTasPhase = (d) => { for (const i of SL_TAS) if (slCnt(d, i) < D.SLEEP[i].n) return i; return -1; };
+  function nightLabel(k) {
+    const a = fmtDate(k), b = fmtDate(addDays(k, 1)), am = a.split(' ').slice(1).join(' '), bm = b.split(' ').slice(1).join(' ');
+    return 'Ночь с ' + (am === bm ? a.split(' ')[0] : a) + ' на ' + b;
+  }
+  const sawH = (t) => esc(t || '').replace(/ﷺ/g, '<span class="saw">ﷺ</span>'); // знак ﷺ — шрифтом Amiri, иначе на части телефонов он рисуется значком
+  const brText = (t) => sawH(t).replace(/\n/g, '<br>');
+  const SL_MOON = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19.5 14.5A8 8 0 1 1 9.5 4.5a6.5 6.5 0 0 0 10 10z"/><path d="M17 3.5v3M15.5 5h3"/></svg>';
+
+  function vSleep() {
+    const k = sleepKey(), d = getDay(k), P = slProgress(d), tr = S.set.slTr !== false, min = slMin(), out = [];
+    const sub = P.all ? 'Прочитаны. Пусть Аллах хранит вас этой ночью' : (k !== todayKey() || isNightNow() ? nightLabel(k) : 'Читаются перед сном, после Иши');
+    out.push('<div class="card sl-head"><span class="sl-moon">' + SL_MOON + '</span><span class="col grow" style="gap:2px"><span class="sl-h">Азкары перед сном</span><span class="small sub">' + sub + '</span></span>' + ringSvg(46, P.total ? P.done / P.total : 0, P.all, '<b class="num" style="font-size:13px">' + P.done + '</b><small>из ' + P.total + '</small>') + '</div>');
+    out.push('<div class="between sl-ctl"><div class="seg mini" role="group" aria-label="Сколько читать"><button class="' + (min ? '' : 'on') + '" data-a="slMode" data-v="full" aria-pressed="' + !min + '">Полностью</button><button class="' + (min ? 'on' : '') + '" data-a="slMode" data-v="min" aria-pressed="' + min + '">Минимум</button></div>' +
+      '<button class="chip' + (tr ? ' on' : '') + '" data-a="slTr" aria-pressed="' + tr + '">Транскрипция</button></div>');
+    if (min) out.push('<p class="small sub sl-note">Если сил мало: аят аль-Курси, три суры с обтиранием, 33 · 33 · 34 и последняя мольба. Лучше немного каждую ночь, чем всё, но изредка.</p>');
+    let nextMarked = false;
+    const todo = (i) => { if (nextMarked) return ''; nextMarked = true; return ' sl-next'; };
+    const card = (it, i) => {
+      const c = slCnt(d, i), done = c >= it.n;
+      if (done && S.slOpen !== i) {
+        return '<button class="card sl-min" data-a="slOpen" data-v="' + i + '" id="sl' + i + '"><span class="ck2 st-done">' + I.st.done + '</span><span class="li-c"><span class="li-t">' + esc(it.title) + '</span><span class="li-m">' + (it.n > 1 ? times(it.n) + ' · ' : '') + 'прочитано</span></span>' + I.down + '</button>';
+      }
+      let h = '<div class="card zk sl-card' + (done ? ' done' : ' sl-todo' + todo(i)) + '" id="sl' + i + '" data-i="' + i + '">';
+      h += '<div class="between" style="align-items:flex-start;gap:10px"><span class="col" style="gap:2px"><span class="sl-t">' + esc(it.title) + '</span>' + (it.src ? '<span class="small sub">' + esc(it.src) + '</span>' : '') + '</span>' + (it.n > 1 ? '<span class="times">' + times(it.n) + '</span>' : '') + '</div>';
+      if (it.fadl) h += '<p class="sl-fadl">' + sawH(it.fadl) + '</p>';
+      if (it.kind === 'surah') h += '<button class="btn ghost block" data-a="slRead" data-v="' + it.s + ':' + i + '">' + READ_ICON + 'Открыть суру · ' + ayahsLabel(D.SURAH_AYAHS[it.s - 1]) + '</button>';
+      else h += '<p class="zk-ar sl-ar" lang="ar">' + brText(it.ar) + '</p>' + (tr && it.tr ? '<p class="sl-tr">' + brText(it.tr) + '</p>' : '') + '<p class="zk-ru">' + brText(it.ru) + '</p>';
+      h += done ? '<button class="btn block sl-undo" data-a="slUndo" data-v="' + i + '">' + I.checkSm + 'Прочитано · снять отметку</button>'
+        : '<button class="btn gold block" data-a="sl" data-v="' + i + '">' + (it.n > 1 ? 'Прочитал · ' + c + ' из ' + it.n : 'Прочитал') + '</button>';
+      return h + '</div>';
+    };
+    const prep = (idx) => '<div class="card list sl-prep">' + idx.map((i) => {
+      const it = D.SLEEP[i], on = slPrepOn(d, it, i);
+      return '<button class="li" data-a="slPrep" data-v="' + i + '" aria-pressed="' + on + '"><span class="li-c"><span class="li-t">' + esc(it.title) + '</span><span class="li-m">' + esc(it.sub) + ' · ' + esc(it.src) + '</span></span><span class="ck2' + (on ? ' st-done' : '') + '">' + (on ? I.st.done : '') + '</span></button>';
+    }).join('') + '</div>';
+    const sec = (t, m) => '<div class="sh-sec sl-sec">' + t + (m ? '<span>' + m + '</span>' : '') + '</div>';
+    const idxOf = (g, kind) => D.SLEEP.map((it, i) => (it.g === g && (kind === 'prep' ? it.kind === 'prep' : it.kind !== 'prep') && (!min || it.min) ? i : -1)).filter((i) => i >= 0);
+    // 1. перед тем как лечь
+    if (!min) {
+      const pr = idxOf('before', 'prep'), it = idxOf('before');
+      out.push(sec('Перед тем как лечь', pr.filter((i) => slPrepOn(d, D.SLEEP[i], i)).length + ' из ' + pr.length) + prep(pr) + it.map((i) => card(D.SLEEP[i], i)).join(''));
+    }
+    // 2. ложась
+    { const pr = min ? [] : idxOf('lie', 'prep'), it = idxOf('lie');
+      out.push(sec('Ложась в постель', pr.length ? pr.filter((i) => slPrepOn(d, D.SLEEP[i], i)).length + ' из ' + pr.length : '') + (pr.length ? prep(pr) : '') + it.map((i) => card(D.SLEEP[i], i)).join('')); }
+    // 3. тасбих 33 · 33 · 34
+    { const ph = slTasPhase(d), all = ph < 0, cur = D.SLEEP[all ? SL_TAS[SL_TAS.length - 1] : ph], c = all ? cur.n : slCnt(d, ph);
+      let h = sec('Тасбих', '33 · 33 · 34') + '<div class="card sl-tas' + (all ? ' done' : ' sl-todo' + todo(SL_TAS[0])) + '" id="slTas" data-i="' + SL_TAS[0] + '">';
+      h += '<p class="sl-fadl" style="margin:0">' + sawH('Лучше слуги: этот совет Пророк ﷺ дал Али и Фатиме (аль-Бухари, Муслим).') + '</p>';
+      h += '<div class="sl-ph" role="group" aria-label="Этапы тасбиха">' + SL_TAS.map((i) => { const it = D.SLEEP[i], n = slCnt(d, i), ok = n >= it.n; return '<span class="sl-phc' + (i === ph ? ' cur' : '') + (ok ? ' ok' : '') + '"><b>' + esc(it.title) + '</b><span class="num">' + (ok ? I.checkSm : n + ' / ' + it.n) + '</span></span>'; }).join('') + '</div>';
+      if (all) h += '<div class="sl-tas-done">' + I.check + '<span>33 · 33 · 34 — готово</span></div><button class="btn ghost block" data-a="slTapReset">Начать заново</button>';
+      else h += '<button class="sl-tap" data-a="slTap" aria-label="' + esc(cur.title) + ': ещё один раз"><span class="ar" lang="ar">' + cur.ar + '</span><span class="sl-tap-n num" id="slTapN">' + c + '</span><span class="small" id="slTapOf">из ' + cur.n + ' · ' + esc(cur.ru) + '</span></button>' +
+        '<div class="row" style="justify-content:center;gap:10px"><button class="btn ghost sm" data-a="slTapUndo">Отменить 1</button><button class="btn ghost sm" data-a="slTapReset">Сбросить</button></div>';
+      out.push(h + '</div>'); }
+    // 4. мольбы
+    if (!min) { const it = idxOf('dua'); out.push(sec('Мольбы', it.filter((i) => slCnt(d, i) >= D.SLEEP[i].n).length + ' из ' + it.length) + it.map((i) => card(D.SLEEP[i], i)).join('')); }
+    // 5. последние слова
+    { const it = idxOf('last'); out.push(sec('Последние слова', '') + it.map((i) => card(D.SLEEP[i], i)).join('') + '<p class="small sub sl-note">После этих слов лучше ни с кем не разговаривать — пусть они будут последними.</p>'); }
+    // если есть время
+    if (!min) out.push(sec('Если есть время', 'по мусхафу') + '<div class="card list">' + D.SLEEP_MORE.map((x) => '<button class="li" data-a="slRead" data-v="' + x.s + ':-1"><span class="li-c"><span class="li-t">' + esc(x.title) + '</span><span class="li-m">' + sawH(x.note) + '</span></span>' + I.chev + '</button>').join('') + '</div>');
+    // при пробуждении
+    { const open = !!S.slWake;
+      let h = '<div class="card sl-wake"><button class="list-row" data-a="slWake" aria-expanded="' + open + '"><span class="grow" style="font-size:15px;font-weight:800">При пробуждении</span><span class="small sub" style="margin-right:6px">2 мольбы</span>' + I.down + '</button>';
+      if (open) h += D.SLEEP_WAKE.map((w) => '<div class="sl-w"><span class="sl-t">' + esc(w.title) + '</span><span class="small sub">' + esc(w.src) + '</span><p class="zk-ar sl-ar" lang="ar">' + brText(w.ar) + '</p>' + (tr ? '<p class="sl-tr">' + brText(w.tr) + '</p>' : '') + '<p class="zk-ru">' + brText(w.ru) + '</p>' + (w.note ? '<p class="sl-fadl">' + sawH(w.note) + '</p>' : '') + '</div>').join('');
+      out.push(h + '</div>'); }
+    out.push('<p class="small sub sl-note" style="text-align:center">Транскрипция передаёт произношение приблизительно; аяты лучше выверять с учителем по арабскому тексту.</p>');
+    return out.join('');
+  }
+  // после отметки — плавно к следующему непрочитанному пункту
+  function slScrollNext(from) {
+    requestAnimationFrame(() => {
+      const sc = $('#scroll'); if (!sc) return;
+      const el = Array.from(document.querySelectorAll('.sl-todo')).find((x) => +x.dataset.i > from) || document.querySelector('.sl-todo');
+      if (!el) return;
+      const top = el.getBoundingClientRect().top - sc.getBoundingClientRect().top + sc.scrollTop - 72;
+      try { sc.scrollTo({ top, behavior: REDUCE ? 'auto' : 'smooth' }); } catch (e) { sc.scrollTop = top; }
+    });
+  }
+  function slAfter(k, wasAll, from) {
+    const P = slProgress(getDay(k));
+    render();
+    if (P.all && !wasAll) { haptic('notify', 'success'); toast('Азкары перед сном прочитаны. Пусть Аллах хранит вас этой ночью'); }
+    else if (from != null) slScrollNext(from);
   }
 
   function vZikr() {
@@ -806,10 +932,12 @@
       out.push('<div class="row" style="justify-content:center;gap:10px"><button class="btn ghost sm" data-a="tapUndo">Отменить 1</button><button class="btn ghost sm" data-a="tapReset">Сбросить</button></div>');
       out.push('<div class="z-grid">' + D.ZIKRS.map((x, i) => { const n = d.z[i] || 0; return '<button class="z-cell" data-a="zSel" data-v="' + i + '"><span style="font-size:12.5px;font-weight:700;line-height:1.3;min-height:32px">' + x.short + '</span><span class="num" style="font-size:13px"><b id="zc' + i + '" style="color:' + (n >= 100 ? 'var(--emerald-text)' : 'var(--text)') + '">' + n + '</b><span class="sub"> / 100</span></span><span class="bar"><span id="zb' + i + '" style="width:' + Math.min(n, 100) + '%;background:' + (n >= 100 ? 'var(--emerald)' : 'var(--gold)') + '"></span></span></button>'; }).join('') + '</div>');
     } else if (S.zView === 'azkar') {
-      const which = defaultAzTab(), list = D.AZKAR[which], counts = which === 'morning' ? d.am : d.ae;
+      const which = defaultAzTab();
+      out.push('<div class="seg mini az3" role="group" aria-label="Какие азкары">' + [['morning', 'Утренние'], ['evening', 'Вечерние'], ['sleep', 'Перед сном']].map((x) => '<button class="' + (which === x[0] ? 'on' : '') + '" data-a="azTab" data-v="' + x[0] + '" aria-pressed="' + (which === x[0]) + '">' + x[1] + '</button>').join('') + '</div>');
+      if (which === 'sleep') { out.push(vSleep()); return out.join(''); }
+      const list = D.AZKAR[which], counts = which === 'morning' ? d.am : d.ae;
       const doneN = list.filter((a, i) => (counts[i] || 0) >= a.n).length;
-      out.push('<div class="between"><div class="seg mini" role="group" aria-label="Утренние или вечерние"><button class="' + (which === 'morning' ? 'on' : '') + '" data-a="azTab" data-v="morning">Утренние</button><button class="' + (which === 'evening' ? 'on' : '') + '" data-a="azTab" data-v="evening">Вечерние</button></div><span class="small sub num" style="font-weight:700;font-size:13px">' + doneN + ' из ' + list.length + '</span></div>');
-      out.push('<div class="between"><span class="small sub" style="font-size:13px;padding:0 4px">' + (which === 'morning' ? 'Читаются после Фаджра' : 'Читаются после Асра, до Магриба') + '</span><button class="btn ghost sm" data-a="azAll">Отметить все</button></div>');
+      out.push('<div class="between"><span class="small sub" style="font-size:13px;padding:0 4px">' + (which === 'morning' ? 'После Фаджра' : 'После Асра, до Магриба') + ' · <b class="num">' + doneN + ' из ' + list.length + '</b></span><button class="btn ghost sm" data-a="azAll">Отметить все</button></div>');
       list.forEach((a, i) => {
         const n = counts[i] || 0, done = n >= a.n;
         out.push('<div class="card zk' + (done ? ' done' : '') + '"><div class="between" style="align-items:flex-start"><span class="col"><span style="font-size:15.5px;font-weight:800">' + a.title + '</span>' + (a.source ? '<span class="small sub">' + a.source + '</span>' : '') + '</span><span class="times">' + times(a.n) + '</span></div><p class="zk-ar" lang="ar">' + a.ar + '</p><p class="zk-ru">' + a.ru + '</p><button class="btn block ' + (done ? '' : 'gold') + '" data-a="az" data-v="' + i + '" style="' + (done ? 'background:var(--emerald-soft);color:var(--emerald-text)' : '') + '">' + (done ? I.check + 'Прочитано' : (a.n === 1 ? 'Прочитал' : 'Прочитал · <span class="num">' + n + ' из ' + a.n + '</span>')) + '</button></div>');
@@ -817,6 +945,7 @@
     } else {
       D.DUAS.forEach((g, gi) => {
         out.push('<div class="eyebrow" style="margin-top:6px">' + g.cat + '</div>');
+        if (gi === 0) out.push('<button class="card list-row sl-link" data-a="sleepAz"><span class="sl-moon sm">' + SL_MOON + '</span><span class="col grow" style="gap:1px"><span style="font-size:15px;font-weight:800">Азкары перед сном</span><span class="small sub">Весь порядок: Коран, тасбих, 7 мольб</span></span>' + I.chev + '</button>');
         g.items.forEach((it, ii) => {
           const id = gi + '.' + ii, open = S.duaOpen === id;
           out.push('<div class="card" style="overflow:hidden"><button class="list-row" data-a="dua" data-v="' + id + '" aria-expanded="' + open + '"><span class="star" style="width:32px;height:32px">' + I.star8.replace(/40/g, '32') + '</span><span class="grow" style="font-size:15px;font-weight:800">' + it.title + '</span>' + I.chev + '</button>' + (open ? '<div style="padding:0 16px 16px;display:flex;flex-direction:column;gap:10px"><p class="zk-ar" lang="ar">' + it.ar + '</p><p class="zk-ru">' + it.ru + '</p></div>' : '') + '</div>');
@@ -1270,7 +1399,7 @@
     // постоянство
     const last7 = [6, 5, 4, 3, 2, 1, 0].map((i) => addDays(today, -i));
     const st = [[(d) => PRAYERS.every((p) => ON_TIME[d.f[p.id]]), 'Все фарды вовремя']];
-    if (lvl !== 'start') st.push([(d) => azDone(d, 'morning'), 'Утренние азкары'], [(d) => azDone(d, 'evening'), 'Вечерние азкары']);
+    if (lvl !== 'start') st.push([(d) => azDone(d, 'morning'), 'Утренние азкары'], [(d) => azDone(d, 'evening'), 'Вечерние азкары'], [(d) => slProgress(d).all, 'Азкары перед сном']);
     st.push([(d) => PRAYERS.some((p) => d.f[p.id] === 'mosque' || d.f[p.id] === 'juma'), 'Хотя бы один намаз в мечети']);
     out.push('<section class="sec" aria-label="Постоянство"><div class="sec-h"><h2 class="h2">Постоянство</h2><span class="sec-m">последние 7 дней</span></div><div class="card list">' + st.map((x) => {
       const n = streak(x[0]);
@@ -1318,10 +1447,10 @@
       [['mosque', 'В мечети'], ['jamaat', 'Джамаатом'], ['done', 'Вовремя'], ['qada', 'Каза'], ['missed', 'Пропущено']].filter((x) => lvl !== 'start' || x[0] === 'done' || x[0] === 'missed').map((x) => '<div class="li"><span class="dot" style="width:10px;height:10px;background:' + ST_COLOR[x[0]] + '"></span><span class="li-c"><span class="li-t">' + x[1] + '</span></span><b class="num">' + cnt[x[0]] + '</b></div>').join('') + '</div></section>');
     if (lvl !== 'start') {
       const span = past.filter((k) => k >= first), n = span.length;
-      const m = span.filter((k) => S.days[k] && azDone(S.days[k], 'morning')).length, e = span.filter((k) => S.days[k] && azDone(S.days[k], 'evening')).length;
+      const m = span.filter((k) => S.days[k] && azDone(S.days[k], 'morning')).length, e = span.filter((k) => S.days[k] && azDone(S.days[k], 'evening')).length, sn = span.filter((k) => S.days[k] && slProgress(S.days[k]).all).length;
       const pc = (a, b) => (b ? Math.round(a / b * 100) : 0);
       const row = (label, got, of, color) => '<div class="li col-li"><span class="between"><span class="li-t">' + label + '</span><b class="num"><span class="sub" style="font-weight:700">' + got + ' из ' + of + ' · </span>' + pc(got, of) + '%</b></span><span class="bar" style="height:6px"><span style="width:' + pc(got, of) + '%;background:' + color + '"></span></span></div>';
-      if (n) out.push('<section class="sec" aria-label="Азкары"><div class="sec-h"><h2 class="h2">Азкары</h2>' + (first > past[0] ? '<span class="sec-m">с ' + fmtDate(first) + '</span>' : '') + '</div><div class="card list">' + row('Утренние', m, n, 'var(--gold)') + row('Вечерние', e, n, 'var(--blue)') + '</div></section>');
+      if (n) out.push('<section class="sec" aria-label="Азкары"><div class="sec-h"><h2 class="h2">Азкары</h2>' + (first > past[0] ? '<span class="sec-m">с ' + fmtDate(first) + '</span>' : '') + '</div><div class="card list">' + row('Утренние', m, n, 'var(--gold)') + row('Вечерние', e, n, 'var(--blue)') + row('Перед сном', sn, n, 'var(--emerald)') + '</div></section>');
     }
     if (lvl === 'ihsan') out.push(vDebts(past));
     return out.join('');
@@ -2212,6 +2341,7 @@
     const h = hzOf(s);
     if (h[0] === 1) out.push('<button class="qg-mk" data-a="sheet" data-v="hzS:' + s + '"><span class="qg-ic rev">' + HZ_ICON + '</span><span class="li-c"><span class="li-t">Наизусть: учу</span><span class="li-m">выучено ' + h[1] + ' из ' + ayahsLabel(D.SURAH_AYAHS[s - 1]) + '</span></span></button>');
     else if (h[0] === 2 && hzNext(h) <= todayKey()) out.push('<button class="qg-mk" data-a="sheet" data-v="hzS:' + s + '"><span class="qg-ic rev">' + HZ_ICON + '</span><span class="li-c"><span class="li-t">Повторение наизусть</span><span class="li-m">сегодня пора повторить эту суру</span></span></button>');
+    if (S.slBack && S.slBack.i >= 0) out.unshift('<button class="qg-mk" data-a="slReadDone"><span class="qg-ic rev">' + SL_MOON + '</span><span class="li-c"><span class="li-t">Прочитано — к азкарам перед сном</span><span class="li-m">отметить и вернуться</span></span></button>');
     return out.length ? '<div class="qg-rd">' + out.join('') + '</div>' : '';
   }
 
@@ -2460,8 +2590,11 @@
       try { if (ver('6.1')) { tg.setHeaderColor(hdr); tg.setBackgroundColor(hdr); } if (ver('7.10')) tg.setBottomBarColor(hdr); } catch (e) {}
     }
   }
+  const sleepScreen = () => S.tab === 'zikr' && S.zView === 'azkar' && !S.sheet && defaultAzTab() === 'sleep';
   function applyTheme() {
-    const scheme = S.set.theme === 'auto' ? (tg && tg.colorScheme ? tg.colorScheme : (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')) : S.set.theme;
+    let scheme = S.set.theme === 'auto' ? (tg && tg.colorScheme ? tg.colorScheme : (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')) : S.set.theme;
+    if (sleepScreen()) scheme = 'dark'; // перед сном — всегда тёмный экран, чтобы не слепить в темноте
+    S.nightOn = sleepScreen();
     document.documentElement.classList.toggle('light', scheme === 'light');
     document.documentElement.classList.toggle('lowfx', LOWFX);
     updateSkyBg();
@@ -2499,6 +2632,7 @@
     if (keepTop) { const ns = document.querySelector('#overlay .sheet'); if (ns) ns.scrollTop = keepTop; }
     syncBackButton();
   }
+  function slReturn() { if (S.slBack) { S.slBack = null; S.tab = 'zikr'; S.zView = 'azkar'; S.azTab = 'sleep'; } }
   function syncBackButton() {
     if (!tg || !tg.BackButton || !ver('6.1')) return;
     const need = !!S.sheet || (S.tab === 'quran' && S.quran.reader) || (S.viewKey && S.viewKey !== todayKey()) || (S.set.level && S.tab !== 'home');
@@ -2506,7 +2640,7 @@
   }
   function goBack() {
     if (S.sheet) { S.sheet = null; }
-    else if (S.tab === 'quran' && S.quran.reader) { S.quran.reader = null; }
+    else if (S.tab === 'quran' && S.quran.reader) { S.quran.reader = null; slReturn(); }
     else if (S.viewKey && S.viewKey !== todayKey()) { S.viewKey = null; }
     else if (S.tab !== 'home') { S.tab = 'home'; $('#scroll').scrollTop = 0; }
     render();
@@ -2816,9 +2950,58 @@
     },
     tapUndo() { const k = viewKey(), d = ensureDay(k); d.z[S.zSel] = Math.max(0, (d.z[S.zSel] || 0) - 1); saveDay(k); render(); },
     tapReset() { const k = viewKey(), d = ensureDay(k); d.z[S.zSel] = 0; saveDay(k); render(); },
-    azTab(v) { S.azTab = v; render(); },
-    az(i) { const k = viewKey(), d = ensureDay(k), which = defaultAzTab(), arr = which === 'morning' ? d.am : d.ae, a = D.AZKAR[which][+i]; while (arr.length < D.AZKAR[which].length) arr.push(0); if (arr[+i] < a.n) arr[+i]++; saveDay(k); haptic(arr[+i] >= a.n ? 'notify' : 'impact', arr[+i] >= a.n ? 'success' : 'light'); render(); },
-    azAll() { const k = viewKey(), d = ensureDay(k), which = defaultAzTab(); const arr = D.AZKAR[which].map((a) => a.n); if (which === 'morning') d.am = arr; else d.ae = arr; saveDay(k); haptic('notify', 'success'); render(); },
+    azTab(v) { S.azTab = v; S.slOpen = null; render(); $('#scroll').scrollTop = 0; },
+    sleepAz() { S.tab = 'zikr'; S.zView = 'azkar'; S.azTab = 'sleep'; S.sheet = null; render(); $('#scroll').scrollTop = 0; },
+    sl(v) {
+      const k = sleepKey(), d = ensureDay(k), i = +v, it = D.SLEEP[i]; if (!it) return;
+      const was = slProgress(d).all;
+      d.sl = d.sl || []; while (d.sl.length < D.SLEEP.length) d.sl.push(0);
+      if (d.sl[i] < it.n) d.sl[i]++;
+      saveDay(k);
+      const done = d.sl[i] >= it.n;
+      haptic(done ? 'notify' : 'impact', done ? 'success' : 'light');
+      if (done && S.slOpen === i) S.slOpen = null;
+      slAfter(k, was, done ? i : null);
+    },
+    slUndo(v) { const k = sleepKey(), d = ensureDay(k), i = +v; if (!d.sl) return; d.sl[i] = 0; S.slOpen = null; saveDay(k); haptic('select'); render(); },
+    slOpen(v) { S.slOpen = S.slOpen === +v ? null : +v; render(); },
+    slPrep(v) {
+      const k = sleepKey(), d = ensureDay(k), i = +v, it = D.SLEEP[i]; if (!it) return;
+      if (it.link) { if (d.s[it.link]) delete d.s[it.link]; else d.s[it.link] = 1; }
+      else { d.sl = d.sl || []; while (d.sl.length < D.SLEEP.length) d.sl.push(0); d.sl[i] = d.sl[i] ? 0 : 1; }
+      saveDay(k); haptic('select'); render();
+    },
+    slTap() {
+      if (!S.loaded) return;
+      const k = sleepKey(), d = ensureDay(k), i = slTasPhase(d); if (i < 0) return;
+      const it = D.SLEEP[i], was = slProgress(d).all;
+      d.sl = d.sl || []; while (d.sl.length < D.SLEEP.length) d.sl.push(0);
+      while (d.z.length < D.ZIKRS.length) d.z.push(0);
+      d.sl[i]++; d.z[it.z] = (d.z[it.z] || 0) + 1; saveDay(k, true);
+      if (d.sl[i] >= it.n) { haptic('notify', 'success'); if (slTasPhase(d) < 0) slAfter(k, was, SL_TAS[SL_TAS.length - 1]); else render(); return; }
+      haptic('impact', 'light');
+      const n = $('#slTapN'); if (n) n.textContent = d.sl[i];
+      const ph = document.querySelectorAll('.sl-phc.cur .num'); if (ph[0]) ph[0].textContent = d.sl[i] + ' / ' + it.n;
+    },
+    slTapUndo() {
+      const k = sleepKey(), d = ensureDay(k); if (!d.sl) return;
+      let i = slTasPhase(d); if (i < 0) i = SL_TAS[SL_TAS.length - 1];
+      if (!d.sl[i]) { const p = SL_TAS.indexOf(i); if (p > 0) i = SL_TAS[p - 1]; }
+      if (!d.sl[i]) return;
+      d.sl[i]--; const z = D.SLEEP[i].z; d.z[z] = Math.max(0, (d.z[z] || 0) - 1); saveDay(k); render();
+    },
+    slTapReset() {
+      const k = sleepKey(), d = ensureDay(k); if (!d.sl) return;
+      SL_TAS.forEach((i) => { const z = D.SLEEP[i].z; d.z[z] = Math.max(0, (d.z[z] || 0) - (d.sl[i] || 0)); d.sl[i] = 0; });
+      saveDay(k); haptic('select'); render();
+    },
+    slMode(v) { S.set.slMin = v === 'min'; saveSettings(); haptic('select'); render(); },
+    slTr() { S.set.slTr = S.set.slTr === false; saveSettings(); haptic('select'); render(); },
+    slWake() { S.slWake = !S.slWake; render(); },
+    slRead(v) { const p = v.split(':'); S.slBack = { i: +p[1] }; S.sheet = null; S.tab = 'quran'; S.quran.filter = ''; openSurah(+p[0], 1, 'ar'); },
+    slReadDone() { const b = S.slBack; S.quran.reader = null; slReturn(); if (b && b.i >= 0) A.sl(String(b.i)); else render(); },
+    az(i) { const k = viewKey(), d = ensureDay(k), which = azMorEve(), arr = which === 'morning' ? d.am : d.ae, a = D.AZKAR[which][+i]; while (arr.length < D.AZKAR[which].length) arr.push(0); if (arr[+i] < a.n) arr[+i]++; saveDay(k); haptic(arr[+i] >= a.n ? 'notify' : 'impact', arr[+i] >= a.n ? 'success' : 'light'); render(); },
+    azAll() { const k = viewKey(), d = ensureDay(k), which = azMorEve(); const arr = D.AZKAR[which].map((a) => a.n); if (which === 'morning') d.am = arr; else d.ae = arr; saveDay(k); haptic('notify', 'success'); render(); },
     dua(v) { S.duaOpen = S.duaOpen === v ? -1 : v; render(); },
     qView(v) { S.quran.view = v; render(); },
     read(v) { const p = v.split(':'), R = S.quran.reader, m = R ? R.mode : ((S.set.qlast && S.set.qlast.m) || 'tr'); S.sheet = null; S.quran.filter = ''; openSurah(+p[0], +p[1] || 1, m); },
@@ -2876,7 +3059,7 @@
       const R = S.quran.reader, anc = R && (R.cur || R.a) ? 'ay' + (R.cur || R.a) : '';
       keepAnchor(anc, () => render());
     },
-    closeReader() { S.quran.reader = null; render(); },
+    closeReader() { S.quran.reader = null; slReturn(); render(); },
     qMode(v) {
       const R = S.quran.reader;
       if (!R || R.mode === v || ['ar', 'tr', 'tf'].indexOf(v) < 0 || (v === 'tf' && !sai())) return;
@@ -2927,11 +3110,11 @@
   // Тасбих срабатывает в момент касания (pointerdown), а не после отпускания — так отклик мгновенный и не теряются быстрые касания.
   let lastPointerTap = 0;
   document.addEventListener('pointerdown', (e) => {
-    const el = e.target.closest('[data-a="tap"]');
+    const el = e.target.closest('[data-a="tap"],[data-a="slTap"]');
     if (!el || e.button > 0) return;
     lastPointerTap = Date.now();
     el.classList.add('pressed'); setTimeout(() => el.classList.remove('pressed'), 110);
-    A.tap();
+    A[el.dataset.a]();
   });
   document.addEventListener('click', (e) => {
     const el = e.target.closest('[data-a]');
@@ -2939,7 +3122,7 @@
     const fn = A[el.dataset.a];
     if (!fn) return;
     e.preventDefault();
-    if (el.dataset.a === 'tap' && Date.now() - lastPointerTap < 1000) return;
+    if ((el.dataset.a === 'tap' || el.dataset.a === 'slTap') && Date.now() - lastPointerTap < 1000) return;
     hapticFired = false;
     fn(el.dataset.v || '', el);
     // Лёгкий отклик для любой кнопки, у которой нет своего
