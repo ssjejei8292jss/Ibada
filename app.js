@@ -226,7 +226,7 @@
   const P_DECODE = { f: 'fast', q: 'qada', x: 'missed' };
   const W = { mosque: 1.5, jamaat: 1.2, juma: 1.5, done: 1, qada: 0.5, missed: 0 };
   const ON_TIME = { mosque: 1, jamaat: 1, juma: 1, done: 1 };
-  const LBL = { mosque: 'В мечети', jamaat: 'Джамаатом', juma: 'Джума', done: 'Сделал', qada: 'Каза', missed: 'Пропущен' };
+  const LBL = { mosque: 'В мечети', jamaat: 'Джамаатом', juma: 'Джума', done: 'Совершил', qada: 'Каза', missed: 'Пропущен' };
 
   const blankDay = () => ({ t: 'n', f: {}, s: {}, q: 0, w: 0, am: [], ae: [], z: [], p: '', sl: [] });
   function encodeDay(d) {
@@ -597,7 +597,7 @@
     const lv = [
       ['start', 'Начало', 'просто', 'Только пять намазов: одно касание — и отмечено. Время, кибла, Коран.'],
       ['effort', 'Усердие', 'больше', 'Статусы намазов, сунна при каждом намазе, азкары и тасбих.'],
-      ['ihsan', 'Ихсан', 'полный учёт', 'Джамаат и мечеть, каза-долг, посты, тип дня, зикры по плану, итог дня и серии.']
+      ['ihsan', 'Ихсан', 'полный учёт', 'Джамаат и мечеть, восполнение каза, посты, тип дня, зикры по плану, итог дня и серии.']
     ];
     return '<div class="onb-arch"><svg width="280" height="248" viewBox="0 0 280 248" aria-hidden="true">' +
       '<g fill="#fff"><circle cx="70" cy="70" r="1.2" opacity=".8"/><circle cx="104" cy="42" r=".9" opacity=".6"/><circle cx="206" cy="58" r="1.1" opacity=".7"/><circle cx="230" cy="110" r=".8" opacity=".5"/><circle cx="52" cy="128" r=".9" opacity=".5"/><circle cx="150" cy="30" r=".8" opacity=".6"/></g>' +
@@ -1391,7 +1391,7 @@
     // сетка намазов
     const cnt = { mosque: 0, jamaat: 0, done: 0, qada: 0, missed: 0 };
     past.forEach((k) => { const d = S.days[k]; if (!d) return; PRAYERS.forEach((p) => { let st = d.f[p.id]; if (st === 'juma') st = 'mosque'; if (st && cnt[st] !== undefined) cnt[st]++; }); });
-    const legend = [['mosque', 'В мечети'], ['jamaat', 'Джамаатом'], ['done', 'Вовремя'], ['qada', 'Каза'], ['missed', 'Пропущен']].filter((x) => lvl !== 'start' || x[0] === 'done' || x[0] === 'missed');
+    const legend = [['mosque', 'В мечети'], ['jamaat', 'Джамаатом'], ['done', 'Совершил'], ['qada', 'Каза'], ['missed', 'Пропущен']].filter((x) => lvl !== 'start' || x[0] === 'done' || x[0] === 'missed');
     out.push('<section class="card pad pr-week" aria-label="Намазы недели"><div class="sec-h in"><h2 class="h2">Намазы недели</h2><span class="sec-m num">' + onTime + ' из ' + due + ' вовремя</span></div>' + vPrGrid(keys, today) +
       '<div class="pg-leg">' + legend.map((x) => '<span><i style="background:' + ST_COLOR[x[0]] + '"></i>' + x[1] + (cnt[x[0]] ? ' <b class="num">' + cnt[x[0]] + '</b>' : '') + '</span>').join('') + '</div>' +
       (marked.length ? '' : '<span class="li-m">На этой неделе отметок пока нет. Нажмите на день, чтобы открыть его.</span>') + '</section>');
@@ -1420,7 +1420,7 @@
     let qadaMade = 0, fasts = 0;
     keys.forEach((k) => { const d = S.days[k]; if (!d) return; PRAYERS.forEach((p) => { if (d.f[p.id] === 'qada') qadaMade++; }); if (d.p === 'fast' || d.p === 'qada') fasts++; });
     return '<section class="sec" aria-label="Каза и посты"><div class="sec-h"><h2 class="h2">Каза и посты</h2></div>' +
-      '<div class="card pad pr-debt"><div class="between"><span class="li-c"><span class="li-t">Каза-долг</span><span class="li-m">' + (debt ? 'Пропущенные фард-намазы · восполнено за период: ' + qadaMade : 'Долга нет, альхамдулиллях') + '</span></span><b class="pr-big num" style="color:' + (debt ? 'var(--amber-text)' : 'var(--emerald-text)') + '">' + debt + '</b></div>' +
+      '<div class="card pad pr-debt"><div class="between"><span class="li-c"><span class="li-t">План восполнения</span><span class="li-m">' + (debt ? 'Пропущенные фард-намазы · восполнено за период: ' + qadaMade : 'Долга нет, альхамдулиллях') + '</span></span><b class="pr-big num" style="color:' + (debt ? 'var(--amber-text)' : 'var(--emerald-text)') + '">' + debt + '</b></div>' +
       '<div class="row" style="gap:8px">' + (debt ? '<button class="btn gold sm grow" data-a="qadaDone">Восполнил намаз</button>' : '') + '<button class="btn ghost sm grow" data-a="sheet" data-v="qada">Прошлые годы</button></div></div>' +
       '<div class="card list"><button class="li" data-a="sheet" data-v="fast"><span class="li-c"><span class="li-t">Посты за период</span><span class="li-m">' + (fd ? 'Долг по постам: ' + fd + ' ' + plural(fd, 'день', 'дня', 'дней') : 'Долга по постам нет') + '</span></span><b class="li-big num">' + fasts + '</b></button>' +
       (nf ? '<div class="li"><span class="li-c"><span class="li-t">Ближайший желательный пост</span><span class="li-m">' + WD_FULL[weekday(nf.key)] + ', ' + fmtDate(nf.key) + (nf.info.text !== WD_FULL[weekday(nf.key)] ? ' · ' + nf.info.text : '') + '</span></span></div>' : '') + '</div></section>';
@@ -1444,7 +1444,7 @@
     past.forEach((k) => { const d = S.days[k]; if (!d) return; PRAYERS.forEach((p) => { let st = d.f[p.id]; if (st === 'juma') st = 'mosque'; if (st && cnt[st] !== undefined) cnt[st]++; }); });
     const tot = Object.keys(cnt).reduce((a, x) => a + cnt[x], 0);
     out.push('<section class="sec" aria-label="Фард-намазы"><div class="sec-h"><h2 class="h2">Фард-намазы</h2>' + (tot && lvl !== 'start' ? '<span class="sec-m num">джамаатом ' + Math.round((cnt.mosque + cnt.jamaat) / tot * 100) + '%</span>' : '') + '</div><div class="card list">' +
-      [['mosque', 'В мечети'], ['jamaat', 'Джамаатом'], ['done', 'Вовремя'], ['qada', 'Каза'], ['missed', 'Пропущено']].filter((x) => lvl !== 'start' || x[0] === 'done' || x[0] === 'missed').map((x) => '<div class="li"><span class="dot" style="width:10px;height:10px;background:' + ST_COLOR[x[0]] + '"></span><span class="li-c"><span class="li-t">' + x[1] + '</span></span><b class="num">' + cnt[x[0]] + '</b></div>').join('') + '</div></section>');
+      [['mosque', 'В мечети'], ['jamaat', 'Джамаатом'], ['done', 'Совершил'], ['qada', 'Каза'], ['missed', 'Пропущено']].filter((x) => lvl !== 'start' || x[0] === 'done' || x[0] === 'missed').map((x) => '<div class="li"><span class="dot" style="width:10px;height:10px;background:' + ST_COLOR[x[0]] + '"></span><span class="li-c"><span class="li-t">' + x[1] + '</span></span><b class="num">' + cnt[x[0]] + '</b></div>').join('') + '</div></section>');
     if (lvl !== 'start') {
       const span = past.filter((k) => k >= first), n = span.length;
       const m = span.filter((k) => S.days[k] && azDone(S.days[k], 'morning')).length, e = span.filter((k) => S.days[k] && azDone(S.days[k], 'evening')).length, sn = span.filter((k) => S.days[k] && slProgress(S.days[k]).all).length;
@@ -2401,7 +2401,7 @@
         ['mode', 'Отметка намазов', S.set.level === 'start' ? 'Просто' : S.set.detailed !== false ? 'Подробно' : 'Просто'],
         ['read', 'План чтения', S.read ? S.read.title : 'Нет'],
         ['gam', 'Путь и знаки', gamOn() ? 'Включены' : 'Выключены'],
-        ['qada', 'Долг за прошлые годы', (S.set.qadaBase || 0) + ' нам. · ' + (S.set.fastBase || 0) + ' пост.']]],
+        ['qada', 'Пропуски прошлых лет', (S.set.qadaBase || 0) + ' нам. · ' + (S.set.fastBase || 0) + ' пост.']]],
       ['Вид и отклик', [
         ['theme', 'Тема', { auto: 'Как в Telegram', dark: 'Тёмная', light: 'Светлая' }[S.set.theme]],
         ['sky', 'Небо в карточке намаза', { live: 'Живое', night: 'Всегда ночь', day: 'Всегда день' }[S.set.sky || 'live']],
@@ -2466,14 +2466,14 @@
       body = QG_SHEETS[sh.type](sh, head, opt);
     } else if (sh.type === 'status') {
       const k = viewKey(), pr = PRAYERS.find((p) => p.id === sh.id), cur = getDay(k).f[sh.id], T = prayerTimes(k);
-      const opts = [['mosque', 'В мечети', 'Джамаатом в мечети — высшая награда', '150%'], ['jamaat', 'Джамаатом', 'Коллективно, вне мечети', '120%']];
-      if (sh.id === 'dhuhr' && isFriday(k)) opts.unshift(['juma', 'Джума', 'Пятничный намаз в мечети', '150%']);
-      opts.push(['done', 'Сделал', 'Один, в своё время', '100%'], ['qada', 'Восполнил (каза)', 'После окончания времени', '50%'], ['missed', 'Пропустил', 'Попадёт в каза-долг', '0%']);
+      const opts = [['mosque', 'В мечети', 'С имамом, джамаатом', '150%'], ['jamaat', 'Джамаатом', 'Вместе с другими: дома, на работе, в пути', '120%']];
+      if (sh.id === 'dhuhr' && isFriday(k)) opts.unshift(['juma', 'Джума', 'Пятничный намаз с имамом', '150%']);
+      opts.push(['done', 'Совершил', 'Без джамаата, в отведённое время', '100%'], ['qada', 'Восполнил (каза)', 'После окончания времени', '50%'], ['missed', 'Пропустил', 'Добавится в план восполнения', '0%']);
       // сунна при этом намазе — здесь же, а не чипами на главном экране
       const lvl = S.set.level, d = getDay(k), plan = planFor(k);
       const subs = S.set.detailed && lvl !== 'start' ? PER_PRAYER[sh.id].filter((x) => plan[x[0]] > 0) : [];
       const subsHtml = subs.length ? '<div class="sh-sec">Сунна при намазе</div><div class="card list">' + subs.map((x) => { const on = !!d.s[x[0]], L = SUNNA_FULL[x[0]] || [x[1], '']; return '<button class="li" data-a="sunna" data-v="' + x[0] + '" aria-pressed="' + on + '"><span class="li-c"><span class="li-t">' + L[0] + '</span>' + (L[1] ? '<span class="li-m">' + L[1] + '</span>' : '') + '</span><span class="ck2' + (on ? ' st-done' : '') + '">' + (on ? I.st.done : '') + '</span></button>'; }).join('') + '</div>' : '';
-      body = head(sh.id === 'dhuhr' && isFriday(k) ? 'Зухр / Джума' : pr.name, timeLine(k, pr, T) + ' · как вы совершили?') + opts.map((o) => opt('setStatus', sh.id + ':' + o[0], cur === o[0], o[1], o[2], o[3], 'st-' + o[0])).join('') + subsHtml + (cur ? '<button class="btn block quiet" data-a="setStatus" data-v="' + sh.id + ':">Снять отметку</button>' : '');
+      body = head(sh.id === 'dhuhr' && isFriday(k) ? 'Зухр / Джума' : pr.name, timeLine(k, pr, T) + ' · как вы совершили?') + opts.map((o) => opt('setStatus', sh.id + ':' + o[0], cur === o[0], o[1], o[2], o[3], 'st-' + o[0])).join('') + '<p class="small sub st-note">Проценты — вес в итоге дня, а не мера награды: награду знает только Аллах.</p>' + subsHtml + (cur ? '<button class="btn block quiet" data-a="setStatus" data-v="' + sh.id + ':">Снять отметку</button>' : '');
     } else if (sh.type === 'mode') {
       const det = S.set.detailed !== false;
       body = head('Отметка намазов', 'Как отмечать намазы на экране «Сегодня»') + opt('mode', '1', det, 'Подробно', 'Нажатие на намаз открывает выбор: в мечети, джамаатом, сам, каза — и сунну при нём') + opt('mode', '0', !det, 'Просто', 'Одно нажатие — намаз совершён');
@@ -2545,7 +2545,7 @@
       body = head('Тема') + [['auto', 'Как в Telegram'], ['dark', 'Тёмная'], ['light', 'Светлая']].map((x) => opt('setTheme', x[0], S.set.theme === x[0], x[1])).join('');
     } else if (sh.type === 'qada') {
       const st = (key, label, v) => '<div class="x-row" style="padding:10px 6px"><span class="col grow"><span style="font-size:15px;font-weight:700">' + label + '</span></span><span class="stepper"><button class="step" data-a="base" data-v="' + key + ':-10" aria-label="минус 10">−10</button><button class="step" data-a="base" data-v="' + key + ':-1" aria-label="минус 1">' + I.minus + '</button><span class="num" style="min-width:40px;text-align:center;font-weight:800;font-size:17px">' + v + '</span><button class="step plus" data-a="base" data-v="' + key + ':1" aria-label="плюс 1">' + I.plus + '</button><button class="step plus" data-a="base" data-v="' + key + ':10" aria-label="плюс 10">+10</button></span></div>';
-      body = head('Долг за прошлые годы', 'Пропуски до начала учёта в приложении') + st('qadaBase', 'Фард-намазы', S.set.qadaBase || 0) + st('fastBase', 'Дни поста Рамадана', S.set.fastBase || 0) + '<div class="small sub" style="padding:4px 6px;line-height:1.5">Новые пропуски считаются автоматически из ваших отметок.</div><button class="btn gold block" data-a="closeSheet">Готово</button>';
+      body = head('Пропуски прошлых лет', 'Сколько намазов и постов нужно восполнить за время до начала учёта в приложении') + st('qadaBase', 'Фард-намазы', S.set.qadaBase || 0) + st('fastBase', 'Дни поста Рамадана', S.set.fastBase || 0) + '<div class="small sub" style="padding:4px 6px;line-height:1.5">Новые пропуски считаются автоматически из ваших отметок.</div><button class="btn gold block" data-a="closeSheet">Готово</button>';
     } else if (sh.type === 'sync') {
       const ok = S.set.syncUrl && sync.status === 'ok';
       body = head('Таблица и бот', 'Отметки попадают в вашу Google-таблицу, бот присылает напоминания') +
@@ -2557,7 +2557,7 @@
         (S.set.syncUrl ? '<button class="btn ghost block" data-a="syncOff">Отключить</button>' : '');
     } else if (sh.type === 'fast') {
       const k = viewKey(), cur = getDay(k).p, fi = fastingInfo(k);
-      body = head('Пост · ' + fmtDate(k), fi ? fi.text : 'Обычный день') + [['fast', 'Постился', 'Добровольный или обязательный пост'], ['qada', 'Каза поста', 'Восполнил пропущенный день Рамадана'], ['missed', 'Пропустил', 'Пропущенный день Рамадана — станет долгом']].map((o) => opt('setFast', o[0], cur === o[0], o[1], o[2])).join('') + (cur ? '<button class="btn block" data-a="setFast" data-v="" style="background:none;color:var(--sub);font-size:14px">Снять отметку</button>' : '');
+      body = head('Пост · ' + fmtDate(k), fi ? fi.text : 'Обычный день') + [['fast', 'Постился', 'Добровольный или обязательный пост'], ['qada', 'Каза поста', 'Восполнил пропущенный день Рамадана'], ['missed', 'Пропустил', 'Пропущенный день Рамадана — добавится в план восполнения']].map((o) => opt('setFast', o[0], cur === o[0], o[1], o[2])).join('') + (cur ? '<button class="btn block" data-a="setFast" data-v="" style="background:none;color:var(--sub);font-size:14px">Снять отметку</button>' : '');
     }
     return '<button class="scrim' + (enter ? ' enter' : '') + '" data-a="closeSheet" aria-label="Закрыть"></button><div class="sheet' + (sh.type === 'tfa' ? ' sh-tall sh-tfa' : sh.type === 'qnav' ? ' sh-tall' : '') + (enter ? ' enter' : '') + '" role="dialog" aria-modal="true">' + body + '</div>';
   }
