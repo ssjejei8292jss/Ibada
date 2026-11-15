@@ -1,0 +1,81 @@
+# Выкладка сервера бота на Cloudflare Workers.
+# Нужны секреты репозитория (Settings → Secrets and variables → Actions):
+#   CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID — доступ к Cloudflare
+#   BOT_TOKEN — токен бота от @BotFather, OWNER_ID — ваш Telegram ID, ALLOW — (необязательно) ID тестировщиков через запятую
+# Секреты не видны никому, в том числе в логах. Пока их нет, выкладка пропускается.
+name: Бот на Cloudflare
+on:
+  push:
+    branches: [main]
+    paths: ['bot/**', '.github/workflows/bot.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+  pages: write
+concurrency: bot-deploy
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+      OWNER_ID: ${{ secrets.OWNER_ID }}
+      ALLOW: ${{ secrets.ALLOW }}
+      WRANGLER_SEND_METRICS: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Проверки сервера
+        run: node --no-warnings bot/test/worker.test.mjs
+      - name: Есть ли доступ к Cloudflare
+        id: gate
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ] || [ -z "$BOT_TOKEN" ] || [ -z "$OWNER_ID" ]; then
+            echo "Секреты не заданы — выкладка пропущена." >> "$GITHUB_STEP_SUMMARY"; echo "go=0" >> "$GITHUB_OUTPUT"
+          else echo "go=1" >> "$GITHUB_OUTPUT"; fi
+      - name: База D1
+        if: steps.gate.outputs.go == '1'
+        working-directory: bot
+        run: |
+          # почта и имя аккаунта из вывода wrangler в публичный лог не попадают
+          hide() { sed -E 's/[[:alnum:]._%+-]+@[[:alnum:].-]+/[скрыто]/g; s/(account|Account)[^:]*: .*/\1: [скрыто]/'; }
+          dbid() { npx -y wrangler@4 d1 list --json 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const x=JSON.parse(s).find(d=>d.name==='ibada-bot');console.log(x?x.uuid:'')}catch(e){console.log('')}})"; }
+          DB=$(dbid); if [ -z "$DB" ]; then npx -y wrangler@4 d1 create ibada-bot 2>&1 | hide; DB=$(dbid); fi
+          [ -n "$DB" ] || { echo "Не удалось создать базу"; exit 1; }
+          printf '\n[[d1_databases]]\nbinding = "DB"\ndatabase_name = "ibada-bot"\ndatabase_id = "%s"\n' "$DB" >> wrangler.toml
+          npx -y wrangler@4 d1 execute ibada-bot --remote --file=schema.sql --yes 2>&1 | hide | tail -3
+      - name: Выкладка
+        if: steps.gate.outputs.go == '1'
+        id: deploy
+        working-directory: bot
+        run: |
+          hide() { sed -E 's/[[:alnum:]._%+-]+@[[:alnum:].-]+/[скрыто]/g'; }
+          npx -y wrangler@4 deploy 2>&1 | hide | tee /tmp/deploy.log
+          URL=$(grep -oE 'https://ibada-bot\.[a-z0-9-]+\.workers\.dev' /tmp/deploy.log | head -1)
+          [ -n "$URL" ] || { echo "Нет адреса workers.dev: откройте Workers & Pages в Cloudflare и выберите поддомен"; exit 1; }
+          node -e "const e=process.env,o={BOT_TOKEN:e.BOT_TOKEN,OWNER_ID:e.OWNER_ID};if(e.ALLOW)o.ALLOW=e.ALLOW;require('fs').writeFileSync('/tmp/s.json',JSON.stringify(o))"
+          npx -y wrangler@4 secret bulk /tmp/s.json 2>&1 | hide | tail -2; rm -f /tmp/s.json
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+      - name: Настройка бота в Telegram
+        if: steps.gate.outputs.go == '1'
+        run: |
+          KEY=$(printf '%s' "$BOT_TOKEN:setup" | sha256sum | cut -d' ' -f1); echo "::add-mask::$KEY"
+          sleep 5
+          curl -sS -X POST -H "x-setup-key: $KEY" "${{ steps.deploy.outputs.url }}/setup" | tee /tmp/setup.json; echo
+          grep -q '"webhook":true' /tmp/setup.json
+      - name: Адрес сервера в приложении
+        if: steps.gate.outputs.go == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          URL="${{ steps.deploy.outputs.url }}"
+          LINE="window.IBADA_BOT = '$URL';"
+          if ! grep -qF "$LINE" bot-config.js; then
+            sed -i "s#^window.IBADA_BOT = .*#$LINE#" bot-config.js
+            git config user.name "github-actions[bot]"; git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit -am "Адрес сервера бота" && git push
+            gh api -X POST "repos/$GITHUB_REPOSITORY/pages/builds" >/dev/null || true
+          fi
+          echo "Сервер бота: $URL" >> "$GITHUB_STEP_SUMMARY"
