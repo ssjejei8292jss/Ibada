@@ -292,7 +292,7 @@
     return n;
   }
   // сунна при намазе для листа статуса (пусто на уровне «Начало» и в простом режиме)
-  const APP_VERSION = '2.2.2';
+  const APP_VERSION = '2.3.0';
   function prayerSunna(id, k) { const plan = planFor(k); return S.set.detailed && S.set.level !== 'start' ? (PER_PRAYER[id] || []).filter((x) => plan[x[0]] > 0) : []; }
   function qadaDebt() { let n = S.set.qadaBase || 0; Object.keys(S.days).forEach((k) => { const d = S.days[k]; PRAYERS.forEach((p) => { if (d.f[p.id] === 'missed') n++; }); }); return Math.max(0, n); }
   function fastDebt() { let n = S.set.fastBase || 0; Object.keys(S.days).forEach((k) => { const p = S.days[k].p; if (p === 'missed') n++; if (p === 'qada') n--; }); return Math.max(0, n); }
@@ -326,7 +326,7 @@
   const nowSec = () => Math.round(Date.now() / 1000) * 1000;
   function saveDay(k, slow) { const d = S.days[k]; if (d) d.u = nowSec(); saveLocal(k, slow); markPending(k); }
   function saveSettings() { dirty.settings = true; schedule(); }
-  function resched() { if (!S.set.syncUrl || !inTelegram) return; clearTimeout(sync.timer); sync.timer = setTimeout(() => syncNow(false), 1500); }
+  function resched() { botSoon(1500); if (!S.set.syncUrl || !inTelegram) return; clearTimeout(sync.timer); sync.timer = setTimeout(() => syncNow(false), 1500); }
   function timesChanged() { saveSettings(); render(); resched(); }
   // Сохранение не чаще раза в ~1,5 с во время тасбиха, но не реже раза в 5 с, и сразу при сворачивании
   function schedule(ms) {
@@ -447,7 +447,33 @@
   const SYNC_FIRST = '20261017', SYNC_LAST = '20271231';
   const sync = { busy: false, timer: null, status: '', ver: {} };
   const canSync = () => !!(S.set.syncUrl && inTelegram && tg.initData);
+  /* ===== сервер бота (Cloudflare): напоминания и отметки в Telegram для каждого пользователя =====
+     Адрес задаётся в bot-config.js при выкладке сервера. Приложение отправляет расписание на 2 недели, настройки
+     напоминаний и два последних дня; в ответ получает отметки, сделанные кнопками в боте, о которых ещё не знало. */
+  const BOT = String(window.IBADA_BOT || '').replace(/\/$/, '');
+  const bot = { busy: false, timer: null, status: '', chat: null };
+  const canBot = () => !!(BOT && inTelegram && tg.initData && S.set.lat != null);
+  function botSoon(ms) { if (!canBot()) return; clearTimeout(bot.timer); bot.timer = setTimeout(botSync, ms == null ? 3000 : ms); }
+  async function botSync() {
+    if (!canBot() || bot.busy) return;
+    bot.busy = true;
+    const t = todayKey(), days = {}, t0 = Date.now();
+    [addDays(t, -1), t].forEach((k) => { days[k] = dayPayload(k); });
+    try {
+      const ctrl = new AbortController(), to = setTimeout(() => ctrl.abort(), 20000);
+      const r = await fetch(BOT + '/api/sync', { method: 'POST', headers: { 'content-type': 'application/json' }, signal: ctrl.signal,
+        body: JSON.stringify({ initData: tg.initData, schedule: buildSchedule(14), remind: S.set.remind, days, seen: S.set.botSeen || 0 }) }).then((x) => x.json()).finally(() => clearTimeout(to));
+      if (r && r.ok) {
+        let changed = false;
+        Object.keys(r.f || {}).forEach((k) => { const d = ensureDay(k); Object.keys(r.f[k]).forEach((p) => { if (PRAYERS.some((x) => x.id === p) && d.f[p] !== r.f[k][p]) { d.f[p] = r.f[k][p]; changed = true; } }); if (changed) saveDay(k); });
+        S.set.botSeen = t0; bot.status = 'ok'; bot.chat = r.chat !== false; saveSettings();
+        if (changed) render();
+      } else bot.status = r && r.error === 'closed' ? 'closed' : 'error';
+    } catch (e) { bot.status = 'offline'; }
+    bot.busy = false;
+  }
   function markPending(k) {
+    if (k >= addDays(todayKey(), -1)) botSoon();
     if (!S.set.syncUrl || k < SYNC_FIRST || k > SYNC_LAST) return;
     const p = S.set.pending || (S.set.pending = []);
     if (p.indexOf(k) < 0) { p.push(k); saveSettings(); }
@@ -462,10 +488,10 @@
     } catch (e) { return -date.getTimezoneOffset() * 60000; }
   }
   function localTimeMs(k, hm) { const p = parseKey(k), x = String(hm || '21:30').split(':'); const guess = Date.UTC(p.y, p.m - 1, p.d, +x[0], +x[1]); return guess - tzOffsetMs(new Date(guess)); }
-  function buildSchedule() {
+  function buildSchedule(n) {
     if (S.set.lat == null) return null;
     const t = todayKey(), days = [];
-    for (let i = -1; i < 7; i++) {
+    for (let i = -1; i < (n || 7); i++) {
       const k = addDays(t, i), T = prayerTimes(k); if (!T) continue;
       const nf = fastingInfo(addDays(k, 1));
       const iq = {}; PRAYERS.forEach((p) => { const x = iqamaTime(k, p.id, T); if (x) iq[p.id] = +x; });
@@ -473,7 +499,7 @@
     }
     return { tz: S.set.tz || (Intl.DateTimeFormat().resolvedOptions().timeZone || ''), days };
   }
-  function dayPayload(k) { const d = getDay(k); return { u: d.u || 0, t: d.t, f: d.f, s: d.s, q: d.q || 0, w: d.w || 0, am: azDone(d, 'morning'), ae: azDone(d, 'evening'), z: (d.z || []).slice(0, 8), p: d.p || '' }; }
+  function dayPayload(k) { const d = getDay(k); return { u: d.u || 0, t: d.t, f: d.f, s: d.s, q: d.q || 0, w: d.w || 0, am: azDone(d, 'morning'), ae: azDone(d, 'evening'), sl: slProgress(d).all, z: (d.z || []).slice(0, 8), p: d.p || '' }; }
   async function postSync(body) {
     const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 30000);
     try {
@@ -510,7 +536,7 @@
     (S.set.pending || []).forEach((k) => { snap[k] = sync.ver[k] || 0; });
     const days = {};
     Object.keys(snap).forEach((k) => { days[k] = dayPayload(k); });
-    const body = { schedule: buildSchedule(), remind: S.set.remind, seen: S.set.lastPull || 0 };
+    const body = { schedule: buildSchedule(), remind: BOT ? Object.assign({}, S.set.remind, { off: true }) : S.set.remind, seen: S.set.lastPull || 0 };
     if (Object.keys(days).length && !first) body.days = days;
     if (withPull || first) { const from = addDays(todayKey(), -60); body.pull = { from: from < SYNC_FIRST ? SYNC_FIRST : from, to: todayKey() }; }
     const t0 = Date.now();
@@ -2417,8 +2443,17 @@
     const connected = !!S.set.syncUrl;
     const stLabel = !connected ? 'Не подключено' : sync.busy ? 'Синхронизация…' : sync.status && sync.status !== 'ok' ? 'Ошибка' : 'Подключено';
     const stColor = !connected ? 'var(--sub)' : sync.status && sync.status !== 'ok' && !sync.busy ? 'var(--red-text)' : 'var(--emerald-text)';
-    let tb = '<section class="sec" aria-label="Таблица и бот"><div class="sec-h"><h2 class="h2">Таблица и бот</h2></div><div class="card list"><button class="li" data-a="sheet" data-v="sync"><span class="li-c"><span class="li-t">Google-таблица и напоминания</span>' + (connected && S.set.lastSync ? '<span class="li-m">синхронизировано ' + fmtTime(new Date(S.set.lastSync)) + ((S.set.pending || []).length ? ' · ждут отправки: ' + S.set.pending.length : '') + '</span>' : '') + '</span><span class="li-val" style="color:' + stColor + '">' + stLabel + '</span>' + I.chev + '</button>';
-    if (connected) {
+    const secName = BOT ? 'Напоминания и таблица' : 'Таблица и бот';
+    let tb = '<section class="sec" aria-label="' + secName + '"><div class="sec-h"><h2 class="h2">' + secName + '</h2></div><div class="card list"><button class="li" data-a="sheet" data-v="sync"><span class="li-c"><span class="li-t">' + (BOT ? 'Google-таблица' : 'Google-таблица и напоминания') + '</span>' + (connected && S.set.lastSync ? '<span class="li-m">синхронизировано ' + fmtTime(new Date(S.set.lastSync)) + ((S.set.pending || []).length ? ' · ждут отправки: ' + S.set.pending.length : '') + '</span>' : '') + '</span><span class="li-val" style="color:' + stColor + '">' + stLabel + '</span>' + I.chev + '</button>';
+    if (connected || BOT) {
+      const R = S.set.remind || {};
+      const sw = (key, label, hint) => '<div class="x-row"><span class="col grow"><span style="font-size:14.5px;font-weight:700">' + label + '</span><span class="small sub">' + hint + '</span></span><button class="switch" role="switch" aria-checked="' + (R[key] !== false) + '" aria-label="' + label + '" data-a="remind" data-v="' + key + '"><i></i></button></div>';
+      if (BOT) {
+        const hint = bot.status === 'closed' ? 'Бот пока в закрытом тестировании.' : bot.chat === false ? 'Бот не может написать вам: откройте его и нажмите «Запустить».' : bot.status === 'offline' || bot.status === 'error' ? 'Нет связи с сервером бота — повторим позже.' : 'Бот присылает напоминания и даёт отметить намаз прямо в чате.';
+        tb += '<div class="x-row"><span class="col grow"><span style="font-size:14.5px;font-weight:700">Напоминания в Telegram</span><span class="small sub">' + hint + '</span></span><button class="switch" role="switch" aria-checked="' + (R.off !== true) + '" aria-label="Напоминания в Telegram" data-a="remindAll"><i></i></button></div>';
+      }
+    }
+    if ((connected || BOT) && !(S.set.remind || {}).off) {
       const R = S.set.remind || {};
       const sw = (key, label, hint) => '<div class="x-row"><span class="col grow"><span style="font-size:14.5px;font-weight:700">' + label + '</span><span class="small sub">' + hint + '</span></span><button class="switch" role="switch" aria-checked="' + (R[key] !== false) + '" aria-label="' + label + '" data-a="remind" data-v="' + key + '"><i></i></button></div>';
       const toIq = R.target === 'iqama' && hasIqama();
@@ -2427,8 +2462,9 @@
           (hasIqama() ? '<div class="seg mini" role="group" aria-label="До чего напоминать"><button class="' + (!toIq ? 'on' : '') + '" data-a="remindTarget" data-v="adhan">до азана</button><button class="' + (toIq ? 'on' : '') + '" data-a="remindTarget" data-v="iqama">до икамы</button></div>' : '') + '</div>' : '') +
         sw('unmarked', 'Если намаз не отмечен', 'Через 45 минут, с кнопками ответа в чате') +
         sw('azkar', 'Утренние и вечерние азкары', 'После Фаджра и после Асра') +
+        (BOT ? sw('sleep', 'Азкары перед сном', 'Через полтора часа после Иши') : '') +
         sw('fast', 'Желательные посты', 'Накануне вечером') +
-        sw('chron', 'Летопись месяца', '1-го числа — итоги прошлого месяца') +
+        (!BOT ? sw('chron', 'Летопись месяца', '1-го числа — итоги прошлого месяца') : '') +
         sw('summary', 'Итог дня', 'В ' + (R.summaryTime || '21:30') + ' — что сделано и что осталось') +
         (R.summary !== false || R.fast !== false ? '<div style="padding:0 16px 12px"><div class="seg mini" role="group" aria-label="Время итога">' + ['20:00', '21:00', '21:30', '22:00', '23:00'].map((t) => '<button class="' + ((R.summaryTime || '21:30') === t ? 'on' : '') + '" data-a="remindTime" data-v="' + t + '">' + t + '</button>').join('') + '</div></div>' : '');
     }
@@ -2641,6 +2677,16 @@
     $('#overlay').innerHTML = vSheet(sheetEnter) + (S.toast ? '<div class="toast" role="status">' + esc(S.toast) + '</div>' : '');
     if (keepTop) { const ns = document.querySelector('#overlay .sheet'); if (ns) ns.scrollTop = keepTop; }
     syncBackButton();
+  }
+  function openFromLink() {
+    let v = '';
+    try { v = new URLSearchParams(location.search).get('open') || (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || ''; } catch (e) {}
+    if (!v || !S.set.level) return;
+    if (v === 'morning' || v === 'evening' || v === 'sleep') { S.tab = 'zikr'; S.zView = 'azkar'; S.azTab = v; }
+    else if (v === 'progress') S.tab = 'progress';
+    else if (PRAYERS.some((p) => p.id === v)) { S.tab = 'home'; S.viewKey = null; S.sheet = { type: 'status', id: v }; }
+    else return;
+    render(); $('#scroll').scrollTop = 0;
   }
   function slReturn() { if (S.slBack) { S.slBack = null; S.tab = 'zikr'; S.zView = 'azkar'; S.azTab = 'sleep'; } }
   function syncBackButton() {
@@ -3114,9 +3160,14 @@
       syncNow(true).then(() => { toast(sync.status === 'ok' ? 'Таблица подключена' : 'Не получилось: ' + sync.status); });
     },
     syncOff() { S.set.syncUrl = ''; S.set.lastSync = 0; S.set.pending = []; S.syncDraft = null; sync.status = ''; saveSettings(); S.sheet = null; render(); toast('Таблица отключена'); },
-    remind(key) { const R = S.set.remind || (S.set.remind = {}); R[key] = R[key] === false; saveSettings(); haptic('select'); render(); clearTimeout(sync.timer); sync.timer = setTimeout(() => syncNow(false), 1500); },
-    remindOffset(v) { S.set.remind.offset = +v; saveSettings(); render(); clearTimeout(sync.timer); sync.timer = setTimeout(() => syncNow(false), 1500); },
-    remindTime(v) { S.set.remind.summaryTime = v; saveSettings(); render(); clearTimeout(sync.timer); sync.timer = setTimeout(() => syncNow(false), 1500); },
+    remind(key) { const R = S.set.remind || (S.set.remind = {}); R[key] = R[key] === false; saveSettings(); haptic('select'); render(); botSoon(1000); clearTimeout(sync.timer); sync.timer = setTimeout(() => syncNow(false), 1500); },
+    remindAll() {
+      const R = S.set.remind || (S.set.remind = {}); R.off = !R.off; saveSettings(); haptic('select'); render(); botSoon(800);
+      // разрешение писать в личные сообщения — если приложение открыли не из бота
+      if (!R.off && tg && tg.requestWriteAccess && ver('6.9')) { try { tg.requestWriteAccess((ok) => { if (!ok) toast('Без разрешения бот не сможет присылать напоминания'); }); } catch (e) {} }
+    },
+    remindOffset(v) { S.set.remind.offset = +v; saveSettings(); render(); botSoon(1000); clearTimeout(sync.timer); sync.timer = setTimeout(() => syncNow(false), 1500); },
+    remindTime(v) { S.set.remind.summaryTime = v; saveSettings(); render(); botSoon(1000); clearTimeout(sync.timer); sync.timer = setTimeout(() => syncNow(false), 1500); },
     share() { if (!SHARE_LINK) return; const url = 'https://t.me/share/url?url=' + encodeURIComponent(SHARE_LINK) + '&text=' + encodeURIComponent('Ибада — время намазов, Коран, азкары и учёт поклонения'); if (tg && tg.openTelegramLink) tg.openTelegramLink(url); else window.open(url, '_blank'); }
   };
 
@@ -3220,9 +3271,11 @@
     // «Настройки» в меню Telegram ведут в «Ещё»
     try { if (tg && tg.SettingsButton && ver('7.0')) { tg.SettingsButton.show(); tg.SettingsButton.onClick(() => { S.sheet = null; S.quran.reader = null; S.tab = 'more'; render(); $('#scroll').scrollTop = 0; }); } } catch (e) {}
     if (canSync()) syncNow(true);
+    botSoon(800);
+    openFromLink();
     setTimeout(gamStart, 500);
     let lastVisibleSync = Date.now();
-    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshFromCloud(); });
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { refreshFromCloud(); if (Date.now() - (S.set.botSeen || 0) > 60000) botSoon(500); } });
     try { if (tg) { tg.onEvent('deactivated', () => flush(true)); tg.onEvent('activated', () => refreshFromCloud()); } } catch (e) {}
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && canSync() && Date.now() - lastVisibleSync > 120000) { lastVisibleSync = Date.now(); syncNow(true); } });
     setInterval(updateSkyBg, 60000);

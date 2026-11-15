@@ -1,0 +1,14 @@
+# Ибада — сервер бота. Выкладывается автоматически из GitHub Actions (.github/workflows/bot.yml).
+# Секреты (BOT_TOKEN, OWNER_ID, ALLOW) задаются только в Cloudflare, не здесь.
+name = "ibada-bot"
+main = "worker.js"
+compatibility_date = "2026-11-01"
+
+[vars]
+APP_URL = "https://ssjejei8292jss.github.io/Ibada/"
+OPEN = "0"   # 0 — закрытое тестирование: бот отвечает только владельцу и списку ALLOW; 1 — всем
+
+[triggers]
+crons = ["* * * * *"]
+
+# [[d1_databases]] добавляет workflow при выкладке (binding = "DB", database_name = "ibada-bot")
