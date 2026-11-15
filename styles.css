@@ -650,6 +650,7 @@ button.card { transition: transform .12s ease; }
 .scrim.enter { animation: fade .22s ease; }
 .sheet.snap { transition: transform .22s cubic-bezier(.2,.9,.25,1); }
 .sh-sec { font-size: 13px; font-weight: 800; color: var(--sub); padding: 10px 6px 2px; }
+.st-done-btn { margin: 12px 0 6px; }
 .sheet .card.list { background: transparent; border-color: var(--line); }
 .opt { border-radius: var(--r-md); }
 .opt.on { border-color: var(--gold); background: var(--gold-soft); }
