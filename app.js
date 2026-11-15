@@ -291,6 +291,9 @@
     for (let i = 0; i < 2000; i++) { if (S.days[k] && test(S.days[k], k)) { n++; k = addDays(k, -1); } else break; }
     return n;
   }
+  // сунна при намазе для листа статуса (пусто на уровне «Начало» и в простом режиме)
+  const APP_VERSION = '2.2.2';
+  function prayerSunna(id, k) { const plan = planFor(k); return S.set.detailed && S.set.level !== 'start' ? (PER_PRAYER[id] || []).filter((x) => plan[x[0]] > 0) : []; }
   function qadaDebt() { let n = S.set.qadaBase || 0; Object.keys(S.days).forEach((k) => { const d = S.days[k]; PRAYERS.forEach((p) => { if (d.f[p.id] === 'missed') n++; }); }); return Math.max(0, n); }
   function fastDebt() { let n = S.set.fastBase || 0; Object.keys(S.days).forEach((k) => { const p = S.days[k].p; if (p === 'missed') n++; if (p === 'qada') n--; }); return Math.max(0, n); }
 
@@ -470,7 +473,7 @@
     }
     return { tz: S.set.tz || (Intl.DateTimeFormat().resolvedOptions().timeZone || ''), days };
   }
-  function dayPayload(k) { const d = getDay(k); return { t: d.t, f: d.f, s: d.s, q: d.q || 0, w: d.w || 0, am: azDone(d, 'morning'), ae: azDone(d, 'evening'), z: (d.z || []).slice(0, 8), p: d.p || '' }; }
+  function dayPayload(k) { const d = getDay(k); return { u: d.u || 0, t: d.t, f: d.f, s: d.s, q: d.q || 0, w: d.w || 0, am: azDone(d, 'morning'), ae: azDone(d, 'evening'), z: (d.z || []).slice(0, 8), p: d.p || '' }; }
   async function postSync(body) {
     const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 30000);
     try {
@@ -507,9 +510,10 @@
     (S.set.pending || []).forEach((k) => { snap[k] = sync.ver[k] || 0; });
     const days = {};
     Object.keys(snap).forEach((k) => { days[k] = dayPayload(k); });
-    const body = { schedule: buildSchedule(), remind: S.set.remind };
+    const body = { schedule: buildSchedule(), remind: S.set.remind, seen: S.set.lastPull || 0 };
     if (Object.keys(days).length && !first) body.days = days;
     if (withPull || first) { const from = addDays(todayKey(), -60); body.pull = { from: from < SYNC_FIRST ? SYNC_FIRST : from, to: todayKey() }; }
+    const t0 = Date.now();
     try {
       const r = await postSync(body);
       if (!r || !r.ok) {
@@ -532,6 +536,7 @@
           S.set.pending = [];
         }
         S.set.lastSync = Date.now();
+        if (body.pull) S.set.lastPull = t0; // всё, что бот отметил до этого момента, приложение уже видело
         sync.status = 'ok';
         if ((S.set.pending || []).length) { clearTimeout(sync.timer); sync.timer = setTimeout(() => syncNow(false), 3000); }
       }
@@ -2429,7 +2434,7 @@
     }
     out.push(tb + '</div></section>');
     out.push('<div class="card pad more-sj"><span class="more-sj-t">Садака джария</span><span class="li-m" style="color:var(--text)">Приложение бесплатное и без рекламы. Поделитесь им с близкими — награда за каждого, кто будет пользоваться.</span>' + (SHARE_LINK ? '<button class="btn gold block" data-a="share">Поделиться</button>' : '') + '</div>');
-    out.push('<div class="foot-note">Ибада · версия 2.0 · данные хранятся в ' + (store.cloud ? 'облаке Telegram' : 'этом браузере') + '</div>');
+    out.push('<div class="foot-note">Ибада · версия ' + APP_VERSION + ' · данные хранятся в ' + (store.cloud ? 'облаке Telegram' : 'этом браузере') + '</div>');
     return out.join('');
   }
 
@@ -2470,10 +2475,14 @@
       if (sh.id === 'dhuhr' && isFriday(k)) opts.unshift(['juma', 'Джума', 'Пятничный намаз с имамом', '150%']);
       opts.push(['done', 'Совершил', 'Без джамаата, в отведённое время', '100%'], ['qada', 'Восполнил (каза)', 'После окончания времени', '50%'], ['missed', 'Пропустил', 'Добавится в план восполнения', '0%']);
       // сунна при этом намазе — здесь же, а не чипами на главном экране
-      const lvl = S.set.level, d = getDay(k), plan = planFor(k);
-      const subs = S.set.detailed && lvl !== 'start' ? PER_PRAYER[sh.id].filter((x) => plan[x[0]] > 0) : [];
-      const subsHtml = subs.length ? '<div class="sh-sec">Сунна при намазе</div><div class="card list">' + subs.map((x) => { const on = !!d.s[x[0]], L = SUNNA_FULL[x[0]] || [x[1], '']; return '<button class="li" data-a="sunna" data-v="' + x[0] + '" aria-pressed="' + on + '"><span class="li-c"><span class="li-t">' + L[0] + '</span>' + (L[1] ? '<span class="li-m">' + L[1] + '</span>' : '') + '</span><span class="ck2' + (on ? ' st-done' : '') + '">' + (on ? I.st.done : '') + '</span></button>'; }).join('') + '</div>' : '';
-      body = head(sh.id === 'dhuhr' && isFriday(k) ? 'Зухр / Джума' : pr.name, timeLine(k, pr, T) + ' · как вы совершили?') + opts.map((o) => opt('setStatus', sh.id + ':' + o[0], cur === o[0], o[1], o[2], o[3], 'st-' + o[0])).join('') + '<p class="small sub st-note">Проценты — вес в итоге дня, а не мера награды: награду знает только Аллах.</p>' + subsHtml + (cur ? '<button class="btn block quiet" data-a="setStatus" data-v="' + sh.id + ':">Снять отметку</button>' : '');
+      const d = getDay(k), subs = prayerSunna(sh.id, k), first = !!cur && cur !== 'missed' && subs.length > 0;
+      const subsHtml = subs.length ? '<div class="sh-sec">' + (first ? 'Сунна при намазе — отметьте, что совершили' : 'Сунна при намазе') + '</div><div class="card list">' + subs.map((x) => { const on = !!d.s[x[0]], L = SUNNA_FULL[x[0]] || [x[1], '']; return '<button class="li" data-a="sunna" data-v="' + x[0] + '" aria-pressed="' + on + '"><span class="li-c"><span class="li-t">' + L[0] + '</span>' + (L[1] ? '<span class="li-m">' + L[1] + '</span>' : '') + '</span><span class="ck2' + (on ? ' st-done' : '') + '">' + (on ? I.st.done : '') + '</span></button>'; }).join('') + '</div>' : '';
+      const title = sh.id === 'dhuhr' && isFriday(k) ? 'Зухр / Джума' : pr.name, curName = cur && (opts.find((o) => o[0] === cur) || [])[1];
+      const optsHtml = opts.map((o) => opt('setStatus', sh.id + ':' + o[0], cur === o[0], o[1], o[2], o[3], 'st-' + o[0])).join('') + '<p class="small sub st-note">Проценты — вес в итоге дня, а не мера награды: награду знает только Аллах.</p>';
+      // уже отмечен и есть сунна: сунна наверху, под ней «Готово», статус можно изменить ниже
+      body = first
+        ? head(title, timeLine(k, pr, T) + ' · отмечено: ' + curName) + subsHtml + '<button class="btn gold block st-done-btn" data-a="closeSheet">Готово</button><div class="sh-sec">Изменить статус</div>' + optsHtml + '<button class="btn block quiet" data-a="setStatus" data-v="' + sh.id + ':">Снять отметку</button>'
+        : head(title, timeLine(k, pr, T) + ' · как вы совершили?') + optsHtml + subsHtml + (cur ? '<button class="btn block quiet" data-a="setStatus" data-v="' + sh.id + ':">Снять отметку</button>' : '');
     } else if (sh.type === 'mode') {
       const det = S.set.detailed !== false;
       body = head('Отметка намазов', 'Как отмечать намазы на экране «Сегодня»') + opt('mode', '1', det, 'Подробно', 'Нажатие на намаз открывает выбор: в мечети, джамаатом, сам, каза — и сунну при нём') + opt('mode', '0', !det, 'Просто', 'Одно нажатие — намаз совершён');
@@ -2626,7 +2635,8 @@
     // шторка выезжает один раз — при открытии; перерисовка внутри неё не повторяет анимацию
     const sheetId = S.sheet ? S.sheet.type + ':' + (S.sheet.id || '') : '';
     const sheetEnter = !!sheetId && sheetId !== lastSheet;
-    const oldSheet = document.querySelector('#overlay .sheet'), keepTop = !sheetEnter && oldSheet ? oldSheet.scrollTop : 0;
+    const oldSheet = document.querySelector('#overlay .sheet'), keepTop = !sheetEnter && oldSheet && !(S.sheet && S.sheet.top) ? oldSheet.scrollTop : 0;
+    if (S.sheet) delete S.sheet.top;
     lastSheet = sheetId;
     $('#overlay').innerHTML = vSheet(sheetEnter) + (S.toast ? '<div class="toast" role="status">' + esc(S.toast) + '</div>' : '');
     if (keepTop) { const ns = document.querySelector('#overlay .sheet'); if (ns) ns.scrollTop = keepTop; }
@@ -2901,7 +2911,10 @@
     goalBack() { const g = ensureGoal(); if (g) { g.st = 'new'; saveGam(); render(); } },
     gamToggle() { S.set.gam = S.set.gam === false; saveSettings(); if (S.set.gam) { haptic('notify', 'success'); setTimeout(gamCheck, 300); } render(); },
     toPath() { S.sheet = null; S.tab = 'progress'; S.prog.period = 'path'; render(); $('#scroll').scrollTop = 0; },
-    setStatus(v) { const i = v.indexOf(':'), id = v.slice(0, i), st = v.slice(i + 1); const k = viewKey(), d = ensureDay(k); if (st) d.f[id] = st; else delete d.f[id]; saveDay(k); S.sheet = null; const good = st && st !== 'missed'; haptic(good ? 'notify' : 'impact', good ? 'success' : 'light'); render(); if (good) celebrate(id); },
+    setStatus(v) { const i = v.indexOf(':'), id = v.slice(0, i), st = v.slice(i + 1); const k = viewKey(), d = ensureDay(k); if (st) d.f[id] = st; else delete d.f[id]; saveDay(k); const good = st && st !== 'missed';
+      // после отметки лист остаётся открытым, если при намазе есть сунна: она поднимается наверх
+      const keep = good && S.sheet && S.sheet.type === 'status' && prayerSunna(id, k).length > 0;
+      if (!keep) S.sheet = null; else S.sheet.top = 1; haptic(good ? 'notify' : 'impact', good ? 'success' : 'light'); render(); if (good) celebrate(id); },
     setFast(v) { const k = viewKey(), d = ensureDay(k); d.p = v; saveDay(k); S.sheet = null; haptic('select'); render(); },
     qadaDone() { if (S.set.qadaBase > 0) { S.set.qadaBase--; saveSettings(); S.gam.qadaMade = (S.gam.qadaMade || 0) + 1; const wk = weekStart(todayKey()); S.gam.qw = S.gam.qw || {}; S.gam.qw[wk] = (S.gam.qw[wk] || 0) + 1; Object.keys(S.gam.qw).forEach((x) => { if (x < addDays(wk, -56)) delete S.gam.qw[x]; }); saveGam(); dataVer++; gamCheckSoon(); toast('Альхамдулиллях! Долг уменьшился'); } else toast('Откройте день с пропуском в «Прогрессе» и смените статус на «Каза»'); haptic('notify', 'success'); render(); },
     base(v) { const p = v.split(':'); S.set[p[0]] = Math.max(0, (S.set[p[0]] || 0) + +p[1]); saveSettings(); haptic('select'); render(); },
