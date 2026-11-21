@@ -293,8 +293,8 @@
     const parts = [[fard, 0.5], [sunna, 0.2], [azkar, 0.15], [zikr, 0.15]].filter((x) => x[0] !== null);
     const ws = parts.reduce((a, x) => a + x[1], 0);
     const plan2 = dayPlan(k);
-    // итог дня — доля личного плана (v2.4): 1 = план выполнен, больше 1 — сверх плана
-    return { fard, sunna, azkar, zikr, overall: plan2.pct, old: parts.reduce((a, x) => a + x[0] * x[1], 0) / ws, plan: plan2 };
+    // итог дня — доля личного плана (v2.4): 1 = план выполнен, больше 1 — сверх плана; сегодня — «на сейчас» (v2.5)
+    return { fard, sunna, azkar, zikr, overall: k === todayKey() && !plan2.complete ? plan2.nowPct : plan2.pct, old: parts.reduce((a, x) => a + x[0] * x[1], 0) / ws, plan: plan2 };
   }
   const fardDoneCount = (d) => PRAYERS.filter((p) => d.f[p.id] && d.f[p.id] !== 'missed').length;
   function streak(test) {
@@ -304,7 +304,7 @@
     return n;
   }
   // сунна при намазе для листа статуса (пусто на уровне «Начало» и в простом режиме)
-  const APP_VERSION = '2.4.3';
+  const APP_VERSION = '2.5.0';
   function prayerSunna(id, k) {
     if (!(S.set.detailed && S.set.level !== 'start')) return [];
     const d = getDay(k), dp = dayPlan(k);
@@ -443,15 +443,39 @@
     const inPlan = {}; items.forEach((x) => { inPlan[x.id] = 1; });
     const extras = PI.filter((x) => !inPlan[x.id] && piApplies(x, k, d) && x.ok(d, k));
     const n = 5 + items.length, done = fd + idone, complete = done >= n;
-    return { n, done, fd, idone, items, inPlan, extras, ex: extras.length, complete, missed, pct: (done + (complete ? extras.length : 0)) / n, mode: d.mn ? 'm' : d.t };
+    const pct = (done + (complete ? extras.length : 0)) / n;
+    // сегодня кольцо считает только наступившее: намаз — с его времени, утренние азкары и пост — с Фаджра, духа — с восхода,
+    // вечерние азкары — с Асра, пятничное — с Зухра, ночное и «в течение дня» — с Иши. Сделанное заранее засчитывается сразу.
+    let nowN = n, nowDone = done;
+    const T = k === todayKey() ? prayerTimes(k) : null;
+    if (T && !complete) {
+      const now = new Date(), due = (x) => now >= dueAt(x, T);
+      nowN = PRAYERS.filter((p) => now >= T[p.id] || (d.f[p.id] && d.f[p.id] !== 'missed')).length + items.filter((x) => due(x) || x.ok(d, k)).length;
+      nowDone = done;
+    }
+    const nowPct = complete ? pct : nowN ? Math.min(1, nowDone / nowN) : 0;
+    return { n, done, fd, idone, items, inPlan, extras, ex: extras.length, complete, missed, pct, nowN, nowDone, nowPct, mode: d.mn ? 'm' : d.t };
+  }
+  function dueAt(x, T) {
+    if (x.pr) return T[x.pr];
+    return { am: T.fajr, fast: T.fajr, duha: T.sunrise, ae: T.asr, kahf: T.dhuhr, ghusl: T.dhuhr }[x.id] || T.isha;
   }
   const pctText = (v) => Math.round((v || 0) * 100) + '%';
-  // возвращение: два прошлых дня подряд были тяжёлыми (меньше половины плана)
+  // возвращение: два прошлых дня подряд были тяжёлыми — не совершены два и больше фарда или итог вдвое ниже своей нормы
+  function lowDay(k) {
+    const d = S.days[k];
+    if (!d || isEmptyDay(d)) return true;
+    if (PRAYERS.filter((p) => !d.f[p.id] || d.f[p.id] === 'missed').length >= 2) return true; // два и больше фарда не совершены
+    const prev = []; for (let i = 3; i <= 16; i++) { const s = scores(addDays(k, -i)); if (s) prev.push(s.plan.pct); }
+    if (prev.length < 5) return false;
+    prev.sort((a, b) => a - b);
+    const norm = prev[prev.length >> 1], s = scores(k);
+    return !!s && s.plan.pct < norm * 0.5; // вдвое ниже своей обычной нормы
+  }
   function returnDue() {
     const t = todayKey(), first = firstMark();
     if (!first || first > addDays(t, -3) || S.set.retSeen === t || getDay(t).mn) return false;
-    const low = (k) => { const s = scores(k); return !s || s.overall < 0.5; };
-    return low(addDays(t, -1)) && low(addDays(t, -2)) && !dayPlan(t).complete;
+    return lowDay(addDays(t, -1)) && lowDay(addDays(t, -2)) && !dayPlan(t).complete;
   }
   // предложение внести в план дело, которое 13 из 14 дней делается сверх плана (не чаще раза в две недели)
   function planSuggestion() {
@@ -810,23 +834,32 @@
   };
 
   /* ===== экраны ===== */
+  // первый запуск (v2.5): не уровень, а «что вы уже делаете постоянно» — это и есть план = 100%
+  const ONB = [
+    ['fajrSunna', 'Сунна Фаджра', '2 ракаата перед утренним намазом', ['fajrSunna']],
+    ['ratib', 'Сунна при всех намазах', '12 ракаатов: до и после Зухра, после Магриба и Иши', ['fajrSunna', 'dhuhrBefore', 'dhuhrAfter', 'maghribAfter', 'ishaAfter']],
+    ['after', 'Азкары после намаза', 'Истигфар, 33 · 33 · 34, аят аль-Курси', ['fajrAzkar', 'dhuhrAzkar', 'asrAzkar', 'maghribAzkar', 'ishaAzkar']],
+    ['amae', 'Утренние и вечерние азкары', 'После Фаджра и после Асра', ['am', 'ae']],
+    ['sl', 'Азкары перед сном', 'Аят аль-Курси, три суры, 33 · 33 · 34', ['sl']],
+    ['witr', 'Витр', 'После Иши, до рассвета', ['witr']],
+    ['quran', 'Чтение Корана', 'Хотя бы страница в день', ['quran']]
+  ];
+  const onbItems = () => { const out = []; ONB.forEach((o) => { if ((S.onbPick || {})[o[0]]) o[3].forEach((id) => { if (out.indexOf(id) < 0) out.push(id); }); }); return out; };
   function vOnboarding() {
-    const lv = [
-      ['start', 'Начало', 'просто', 'Только пять намазов: одно касание — и отмечено. Время, кибла, Коран.'],
-      ['effort', 'Усердие', 'больше', 'Статусы намазов, сунна при каждом намазе, азкары и тасбих.'],
-      ['ihsan', 'Ихсан', 'полный учёт', 'Джамаат и мечеть, восполнение каза, посты, тип дня, зикры по плану, итог дня и серии.']
-    ];
+    const pick = S.onbPick || {}, n = 5 + onbItems().length;
     return '<div class="onb-arch"><svg width="280" height="248" viewBox="0 0 280 248" aria-hidden="true">' +
       '<g fill="#fff"><circle cx="70" cy="70" r="1.2" opacity=".8"/><circle cx="104" cy="42" r=".9" opacity=".6"/><circle cx="206" cy="58" r="1.1" opacity=".7"/><circle cx="230" cy="110" r=".8" opacity=".5"/><circle cx="52" cy="128" r=".9" opacity=".5"/><circle cx="150" cy="30" r=".8" opacity=".6"/></g>' +
       '<g fill="none" stroke="#E6BE6E" stroke-width="1" opacity=".18" transform="translate(140 118)"><rect x="-70" y="-70" width="140" height="140"/><rect x="-70" y="-70" width="140" height="140" transform="rotate(45)"/><circle r="46"/></g>' +
       '<path d="M176 64a26 26 0 1 0 20 42 21 21 0 1 1-20-42z" fill="#F2D38E"/>' +
       '<g fill="#070B16"><path d="M0 248V214h44v34z"/><path d="M58 248v-58h6v-10l4-8 4 8v10h6v58z"/><path d="M86 248v-30c0-26 24-40 54-48 30 8 54 22 54 48v30z"/><path d="M136 170v-14l4-6 4 6v14z"/><path d="M202 248v-58h6v-10l4-8 4 8v10h6v58z"/><path d="M236 248V220h44v28z"/></g></svg></div>' +
       '<div style="text-align:center;display:flex;flex-direction:column;gap:6px;align-items:center"><h1 class="h1" style="font-size:48px">Ибада</h1><p class="sub" style="margin:0;font-size:15px;line-height:1.5;max-width:320px">Время намазов, Коран, азкары и тасбих — и честный учёт вашего поклонения</p></div>' +
-      '<div class="eyebrow" style="margin-top:4px">С чего начнём?</div>' +
-      lv.map((l) => '<button class="level' + (S.onbLevel === l[0] ? ' on' : '') + '" data-a="onbLevel" data-v="' + l[0] + '" aria-pressed="' + (S.onbLevel === l[0]) + '"><span class="col grow" style="gap:4px"><span class="row" style="gap:8px;align-items:baseline"><span style="font-family:var(--serif);font-size:24px;font-weight:600;line-height:1.1">' + l[1] + '</span><span class="small sub" style="font-weight:700">' + l[2] + '</span></span><span style="font-size:13.5px;line-height:1.45" class="sub">' + l[3] + '</span></span><span class="radio">' + (S.onbLevel === l[0] ? I.checkSm : '') + '</span></button>').join('') +
-      '<button class="btn gold block" data-a="onbStart" style="min-height:56px;font-size:16px;margin-top:4px">Начать</button>' +
-      '<div class="small sub" style="text-align:center">Уровень можно сменить в любой момент. Без рекламы и регистрации.</div>';
+      '<div class="col" style="gap:4px;margin-top:4px"><div class="eyebrow" style="padding:0">Что вы уже делаете постоянно?</div><div class="small sub" style="line-height:1.5">Это и будет ваш план — ваши 100%. Всё остальное будет сверх плана. Начать можно только с фардов: план растёт постепенно.</div></div>' +
+      '<div class="level on" aria-disabled="true"><span class="col grow" style="gap:3px"><span style="font-size:16px;font-weight:800">Пять фардов</span><span class="small sub">Всегда в плане</span></span><span class="radio">' + I.checkSm + '</span></div>' +
+      ONB.map((o) => '<button class="level' + (pick[o[0]] ? ' on' : '') + '" data-a="onbPick" data-v="' + o[0] + '" aria-pressed="' + !!pick[o[0]] + '"><span class="col grow" style="gap:3px"><span style="font-size:16px;font-weight:800">' + o[1] + '</span><span class="small sub">' + o[2] + '</span></span><span class="radio">' + (pick[o[0]] ? I.checkSm : '') + '</span></button>').join('') +
+      '<button class="btn gold block" data-a="onbStart" style="min-height:56px;font-size:16px;margin-top:4px">Начать · план из ' + n + ' ' + plural(n, 'пункта', 'пунктов', 'пунктов') + '</button>' +
+      '<div class="small sub" style="text-align:center">План можно поменять в любой момент: «Ещё → Мой план». Без рекламы и регистрации.</div>';
   }
+
 
   function dayNote(k) {
     const h = hijri(k);
@@ -1026,7 +1059,7 @@
     const note = dayNote(k);
     const nightOf = isToday && calendarKey() !== k ? ' · ночь на ' + WD_ACC[weekday(calendarKey())] : '';
     parts.push('<header class="td-top"><div class="col"><span class="td-date">' + WD_FULL[weekday(k)] + ', ' + fmtDate(k) + (isToday ? '' : ' ' + p.y) + nightOf + (S.set.city && !nightOf ? ' · ' + esc(S.set.city) : '') + '</span><span class="td-hijri">' + hijriText(k) + '</span>' + (note ? '<span class="dnote">' + I.spark + esc(note) + '</span>' : '') + '</div>' +
-      '<button class="td-ring' + (v > 1 ? ' over' : '') + '" data-a="tab" data-v="progress" aria-label="' + (dpH.mode === 'm' ? 'Минимальный день' : 'План дня') + ': ' + pctText(v) + ', ' + dpH.done + ' из ' + dpH.n + '. Открыть прогресс">' + ring2(v, 48, 20, 4.5) + '<span class="num">' + pctText(v) + '</span></button></header>');
+      '<button class="td-ring' + (v > 1 ? ' over' : '') + '" data-a="tab" data-v="progress" aria-label="' + (dpH.mode === 'm' ? 'Минимальный день' : 'План дня') + (isToday && !dpH.complete ? ' на сейчас' : '') + ': ' + pctText(v) + ', ' + dpH.done + ' из ' + (isToday && !dpH.complete ? dpH.nowN + ' наступивших, всего ' + dpH.n : dpH.n) + '. Открыть прогресс">' + ring2(v, 48, 20, 4.5) + '<span class="num">' + pctText(v) + '</span></button></header>');
     if (!isToday) parts.push('<button class="card back-day" data-a="backToday"><span class="li-c"><span class="li-t">Вы отмечаете ' + fmtDate(k) + '</span><span class="li-m">Нажмите, чтобы вернуться к сегодняшнему дню</span></span>' + I.chev + '</button>');
     if (isToday) parts.push(vHero2(k, d));
     if (isToday) parts.push(vPlanCards(k));
@@ -1602,14 +1635,14 @@
     }).join('')).join('');
     return '<div class="pg" role="img" aria-label="Сетка намазов по дням недели">' + head + rows + '</div>';
   }
-  // возвращение — день с выполненным планом после дня, когда план не дотянул и до половины (сам первый день учёта не в счёт)
+  // возвращение — день с выполненным планом после тяжёлого дня (сам первый день учёта не в счёт)
   function returnsCount(days) {
     const t = todayKey(), first = firstMark(); let n = 0;
     for (let i = 0; i < days; i++) {
       const k = addDays(t, -i), y = addDays(k, -1);
       if (!first || y < first) break;
       const s = scores(k), sy = scores(y);
-      if (s && s.plan.complete && (!sy || sy.overall < 0.5)) n++;
+      if (s && s.plan.complete && lowDay(y)) n++;
     }
     return n;
   }
@@ -1641,7 +1674,7 @@
       kpi.push(['Азкары', az + ' из ' + n * 2, 'var(--blue)']);
     }
     if (S.read && S.read.log) { const pg = keys.reduce((a, k) => a + (S.read.log[k] || 0), 0); kpi.push([S.read.book === 'saadi' ? 'Тафсир' : 'Чтение', pg + ' стр.', 'var(--gold)']); }
-    else if (lvl !== 'start') { const sn = avgOf(past, (x) => x.sunna); kpi.push(['Сунна', pct(sn), 'var(--gold)']); }
+    kpi.unshift(['План выполнен', past.filter((k) => planFull(k)).length + ' из ' + past.length + ' дн.', 'var(--emerald)']);
     out.push('<section class="card pr-sum" aria-label="Итог недели"><span class="pr-ring">' + ring2(avg || 0, 104, 45, 9) + '<span><b class="num">' + (avg === null ? '—' : Math.round(avg * 100) + '%') + '</b><small>неделя</small></span></span>' +
       '<span class="col grow" style="gap:9px"><span class="li-m">' + cmp + '</span>' + kpi.map((x) => '<span class="pr-kpi"><i style="background:' + x[2] + '"></i><span class="grow">' + x[0] + '</span><b class="num">' + x[1] + '</b></span>').join('') + '</span></section>');
     // сетка намазов
@@ -1651,7 +1684,6 @@
     out.push('<section class="card pad pr-week" aria-label="Намазы недели"><div class="sec-h in"><h2 class="h2">Намазы недели</h2><span class="sec-m num">' + onTime + ' из ' + due + ' вовремя</span></div>' + vPrGrid(keys, today) +
       '<div class="pg-leg">' + legend.map((x) => '<span><i style="background:' + ST_COLOR[x[0]] + '"></i>' + x[1] + (cnt[x[0]] ? ' <b class="num">' + cnt[x[0]] + '</b>' : '') + '</span>').join('') + '</div>' +
       (marked.length ? '' : '<span class="li-m">На этой неделе отметок пока нет. Нажмите на день, чтобы открыть его.</span>') + '</section>');
-    if (gamOn() && S.loaded) out.push(vGoalCard(false));
     // постоянство
     const last7 = [6, 5, 4, 3, 2, 1, 0].map((i) => addDays(today, -i));
     // v2.4: вместо серий — «N из 7 дней»; первая строка — выполненный план, внизу — возвращения после спада
@@ -1690,14 +1722,19 @@
     const lead = (weekday(keys[0]) + 6) % 7;
     let cells = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((w) => '<span class="cal-w">' + w + '</span>').join('');
     for (let i = 0; i < lead; i++) cells += '<span></span>';
-    keys.forEach((k) => { const s = scores(k), v = s ? s.overall : null; const cls = k > today ? 'fu' : v === null ? 'h0' : v > 1.001 ? 'h4c hov' : v >= 0.9 ? 'h4c' : v >= 0.75 ? 'h3c' : v >= 0.6 ? 'h2c' : 'h1c'; cells += '<button class="' + cls + (k === selKey ? ' on' : '') + ' num" data-a="calDay" data-v="' + k + '" aria-label="' + fmtDate(k) + ': ' + (k > today ? 'ещё впереди' : pct(v)) + '"' + (k === today ? ' style="font-weight:800"' : '') + '>' + parseKey(k).d + '</button>'; });
+    keys.forEach((k) => { const s = scores(k), v = s ? s.overall : null; const cls = k > today ? 'fu' : v === null ? 'h0' : v > 1.001 ? 'h4c hov' : v >= 0.999 ? 'h4c' : v >= 0.5 ? 'h2c' : 'h1c'; cells += '<button class="' + cls + (k === selKey ? ' on' : '') + ' num" data-a="calDay" data-v="' + k + '" aria-label="' + fmtDate(k) + ': ' + (k > today ? 'ещё впереди' : pct(v)) + '"' + (k === today ? ' style="font-weight:800"' : '') + '>' + parseKey(k).d + '</button>'; });
     out.push('<section class="card pad pr-month" aria-label="Месяц"><div class="between" style="align-items:flex-end"><span class="col" style="gap:4px"><span class="li-m">Средний итог · ' + MONTHS_NOM[parseKey(today).m - 1] + '</span><b class="pr-big num" style="font-size:44px">' + (avg === null ? '—' : Math.round(avg * 100) + '%') + '</b></span>' +
       '<span class="col" style="align-items:flex-end;gap:6px"><span class="li-t" style="font-size:13.5px">' + WD_SHORT[weekday(selKey)] + ', ' + fmtDate(selKey) + ' · ' + (selKey > today ? 'впереди' : pct(selSc ? selSc.overall : null)) + '</span>' + (selKey <= today && selKey !== today ? '<button class="btn ghost sm" data-a="openDay" data-v="' + selKey + '" style="min-height:34px">Открыть день</button>' : '') + '</span></div>' +
-      '<div class="cal">' + cells + '</div><div class="pg-leg">' + [['h1c', 'ниже 60%'], ['h2c', '60–74%'], ['h3c', '75–89%'], ['h4c', '90%+']].map((l) => '<span><i class="' + l[0] + '"></i>' + l[1] + '</span>').join('') + '</div></section>');
+      '<div class="cal">' + cells + '</div><div class="pg-leg">' + [['h1c', 'меньше половины'], ['h2c', 'больше половины'], ['h4c', 'план выполнен'], ['h4c hov', 'сверх плана']].map((l) => '<span><i class="' + l[0] + '"></i>' + l[1] + '</span>').join('') + '</div></section>');
     if (!first) { out.push('<div class="card pr-empty"><span class="li-t">Пока нет отметок</span><span class="li-m">Отмечайте намазы на экране «Сегодня» — здесь появятся итоги месяца.</span><button class="btn gold sm" data-a="tab" data-v="home">К намазам</button></div>'); return out.join(''); }
-    const cats = [['Фард-намазы', avgOf(past, (x) => x.fard), 'var(--emerald)']];
-    if (lvl !== 'start') cats.push(['Сунна и прочее', avgOf(past, (x) => x.sunna), 'var(--gold)'], ['Азкары', avgOf(past, (x) => x.azkar), 'var(--blue)'], ['Зикры', avgOf(past, (x) => x.zikr), 'var(--violet-text)']);
-    out.push('<section class="sec" aria-label="По разделам"><div class="sec-h"><h2 class="h2">По разделам</h2></div><div class="card list">' + cats.map((c) => '<div class="li col-li"><span class="between"><span class="li-t">' + c[0] + '</span><b class="num">' + pct(c[1]) + '</b></span><span class="bar" style="height:6px"><span style="width:' + Math.round(Math.min(c[1] || 0, 1) * 100) + '%;background:' + c[2] + '"></span></span></div>').join('') + '</div></section>');
+    // v2.5: сводка по личному плану вместо старой формулы с весами
+    const span2 = past.filter((k) => k >= first), done2 = span2.filter((k) => planFull(k)).length;
+    const exN = span2.reduce((a, k) => { const s = S.days[k] ? scores(k) : null; return a + (s && s.plan.complete ? s.plan.ex : 0); }, 0);
+    const fardN = span2.reduce((a, k) => a + (S.days[k] ? fardDoneCount(S.days[k]) : 0), 0), ret = returnsCount(span2.length);
+    const cats = [['План выполнен', done2 / Math.max(1, span2.length), 'var(--emerald)', done2 + ' из ' + span2.length + ' дн.'], ['Фард-намазы совершены', fardN / Math.max(1, span2.length * 5), 'var(--emerald)', fardN + ' из ' + span2.length * 5]];
+    if (exN) cats.push(['Дела сверх плана', 1, 'var(--gold)', String(exN)]);
+    if (ret) cats.push(['Возвращения после спада', 1, 'var(--gold)', String(ret)]);
+    out.push('<section class="sec" aria-label="План за месяц"><div class="sec-h"><h2 class="h2">План за месяц</h2></div><div class="card list">' + cats.map((c) => '<div class="li col-li"><span class="between"><span class="li-t">' + c[0] + '</span><b class="num">' + c[3] + '</b></span>' + (c[1] < 1 || c[2] !== 'var(--gold)' ? '<span class="bar" style="height:6px"><span style="width:' + Math.round(Math.min(c[1] || 0, 1) * 100) + '%;background:' + c[2] + '"></span></span>' : '') + '</div>').join('') + '</div></section>');
     const cnt = { mosque: 0, jamaat: 0, done: 0, qada: 0, missed: 0 };
     past.forEach((k) => { const d = S.days[k]; if (!d) return; PRAYERS.forEach((p) => { let st = d.f[p.id]; if (st === 'juma') st = 'mosque'; if (st && cnt[st] !== undefined) cnt[st]++; }); });
     const tot = Object.keys(cnt).reduce((a, x) => a + cnt[x], 0);
@@ -1721,6 +1758,8 @@
   const LVL_N = { start: 0, effort: 1, ihsan: 2 };
   const lvlOk = (need) => LVL_N[S.set.level || 'ihsan'] >= LVL_N[need || 'start'];
   const fullDay = (d) => PRAYERS.every((p) => ON_TIME[d.f[p.id]]);
+  // день постоянства (v2.5) — выполненный личный план (в том числе минимальный день)
+  const planFull = (k) => { const s = S.days[k] ? scores(k) : null; return !!s && s.plan.complete; };
   const jamaatSt = (st) => st === 'mosque' || st === 'jamaat' || st === 'juma';
   const STAGES = [1, 7, 14, 21, 30, 40, 60, 90, 120, 180, 270, 365];
   const CAT = {
@@ -1731,25 +1770,25 @@
     goal: ['Цели', 'var(--violet-text)', 'rgba(195,166,238,0.16)']
   };
   const BADGES = [
-    { id: 'first', cat: 'namaz', t: 'Первый полный день', d: 'Все пять фард-намазов вовремя за один день', m: '1', v: (G) => G.fullDays, n: 1 },
-    { id: 'week', cat: 'namaz', t: 'Неделя постоянства', d: '7 дней подряд все пять намазов вовремя', m: '7', v: (G) => G.fullRun, n: 7 },
-    { id: 'run30', cat: 'namaz', t: 'Тридцать дней', d: '30 дней подряд все пять намазов вовремя', m: '30', v: (G) => G.fullRun, n: 30 },
-    { id: 'cleanMonth', cat: 'namaz', t: 'Месяц без пропусков', d: 'Целый календарный месяц: каждый день все пять намазов вовремя', m: '☾', v: (G) => G.cleanMonths, n: 1 },
+    { id: 'first', cat: 'namaz', t: 'Первый день по плану', d: 'Впервые выполнили свой план дня', m: '1', v: (G) => G.fullDays, n: 1 },
+    { id: 'week', cat: 'namaz', t: 'Семь дней по плану', d: 'Семь дней с выполненным планом — не обязательно подряд', m: '7', v: (G) => G.fullDays, n: 7 },
+    { id: 'run30', cat: 'namaz', t: 'Тридцать дней', d: 'Тридцать дней с выполненным планом — не обязательно подряд', m: '30', v: (G) => G.fullDays, n: 30 },
+    { id: 'cleanMonth', cat: 'namaz', t: 'Возвращение', d: 'Вернулись к плану после тяжёлых дней. Вернуться важнее, чем не оступаться', m: '☾', v: (G) => G.returns, n: 1 },
     { id: 'fajr40', cat: 'namaz', lvl: 'effort', t: 'Фаджр джамаатом', d: '40 раз Фаджр в мечети или джамаатом', m: '40', v: (G) => G.fajrJ, n: 40 },
     { id: 'mosque100', cat: 'namaz', lvl: 'effort', t: 'Сто намазов в мечети', d: '100 фард-намазов в мечети, включая джуму', m: '100', v: (G) => G.mosque, n: 100 },
-    { id: 'juma4', cat: 'namaz', lvl: 'effort', t: 'Четыре джумы подряд', d: 'Пятничный намаз четыре пятницы подряд', m: '4', v: (G) => G.jumaRun, n: 4 },
+    { id: 'juma4', cat: 'namaz', lvl: 'effort', t: 'Четыре джумы', d: 'Пятничный намаз в четыре пятницы', m: '4', v: (G) => G.juma, n: 4 },
     { id: 'qada50', cat: 'namaz', lvl: 'effort', t: 'Восполнение', d: '50 восполненных намазов (каза)', m: '50', v: (G) => G.qada, n: 50 },
-    { id: 'sunnaWeek', cat: 'sunna', lvl: 'effort', t: 'Неделя сунны', d: '7 дней подряд вся сунна по вашему плану', m: '7', v: (G) => G.sunnaRun, n: 7 },
+    { id: 'sunnaWeek', cat: 'sunna', lvl: 'effort', t: 'Семь дней сунны', d: 'Семь дней вся сунна по вашему плану — не обязательно подряд', m: '7', v: (G) => G.sunnaDays, n: 7 },
     { id: 'witr30', cat: 'sunna', lvl: 'ihsan', t: 'Витр', d: 'Витр-намаз 30 раз', m: '30', v: (G) => G.witr, n: 30 },
     { id: 'duha30', cat: 'sunna', lvl: 'ihsan', t: 'Духа', d: 'Духа-намаз 30 раз', m: '30', v: (G) => G.duha, n: 30 },
     { id: 'qiyam100', cat: 'sunna', lvl: 'ihsan', t: 'Ночной намаз', d: '100 ракаатов кияма в сумме', m: '100', v: (G) => G.qiyam, n: 100 },
-    { id: 'azkar7', cat: 'zikr', lvl: 'effort', t: 'Неделя азкаров', d: 'Утренние и вечерние азкары 7 дней подряд', m: '7', v: (G) => G.azRun, n: 7 },
+    { id: 'azkar7', cat: 'zikr', lvl: 'effort', t: 'Семь дней азкаров', d: 'Утренние и вечерние азкары за семь дней', m: '7', v: (G) => G.azBoth, n: 7 },
     { id: 'azkar40', cat: 'zikr', lvl: 'effort', t: 'Сорок дней азкаров', d: 'Утренние и вечерние азкары за 40 дней', m: '40', v: (G) => G.azBoth, n: 40 },
     { id: 'zikrDay', cat: 'zikr', lvl: 'effort', t: 'Полный тасбих', d: 'Все восемь зикров по 100 за один день', m: '8', v: (G) => G.zikrAllDays, n: 1 },
     { id: 'zikr1k', cat: 'zikr', lvl: 'effort', t: 'Тысяча зикров', d: '1 000 зикров в сумме', m: '1к', v: (G) => G.zikr, n: 1000 },
     { id: 'zikr10k', cat: 'zikr', lvl: 'effort', t: 'Десять тысяч', d: '10 000 зикров в сумме', m: '10к', v: (G) => G.zikr, n: 10000 },
     { id: 'zikr100k', cat: 'zikr', lvl: 'effort', t: 'Сто тысяч', d: '100 000 зикров в сумме', m: '100к', v: (G) => G.zikr, n: 100000 },
-    { id: 'kahf4', cat: 'fast', lvl: 'ihsan', t: 'Сура аль-Кахф', d: 'Четыре пятницы подряд читали суру аль-Кахф', m: '4', v: (G) => G.kahfRun, n: 4 },
+    { id: 'kahf4', cat: 'fast', lvl: 'ihsan', t: 'Сура аль-Кахф', d: 'Читали суру аль-Кахф в четыре пятницы', m: '4', v: (G) => G.kahf, n: 4 },
     { id: 'monThu', cat: 'fast', lvl: 'ihsan', t: 'Понедельник и четверг', d: 'Постились в понедельник и четверг одной недели', m: '2', v: (G) => G.monThu, n: 1 },
     { id: 'white', cat: 'fast', lvl: 'ihsan', t: 'Белые дни', d: 'Постились 13, 14 и 15 числа одного месяца по хиджре', m: '3', v: (G) => G.white, n: 1 },
     { id: 'arafa', cat: 'fast', lvl: 'ihsan', t: 'День Арафа', d: 'Постились 9 зуль-хиджжа', m: '9', v: (G) => G.arafa, n: 1 },
@@ -1762,27 +1801,27 @@
   function gameStats() {
     const t = todayKey();
     if (gMemo && gMemo.v === dataVer && gMemo.t === t && gMemo.l === S.set.level && gMemo.g === (S.gam.goals || []).length + (S.gam.goal && S.gam.goal.done ? 1 : 0)) return gMemo.G;
-    const G = { fullDays: 0, fullRun: 0, fajrJ: 0, mosque: 0, qada: S.gam.qadaMade || 0, witr: 0, duha: 0, qiyam: 0, azBoth: 0, azRun: 0, sunnaRun: 0, zikr: 0, zikrAllDays: 0, jumaRun: 0, kahfRun: 0, monThu: 0, white: 0, arafa: 0, ashura: 0, cleanMonths: 0, goalsDone: 0 };
+    const G = { fullDays: 0, fullRun: 0, returns: 0, juma: 0, kahf: 0, sunnaDays: 0, fajrJ: 0, mosque: 0, qada: S.gam.qadaMade || 0, witr: 0, duha: 0, qiyam: 0, azBoth: 0, azRun: 0, sunnaRun: 0, zikr: 0, zikrAllDays: 0, jumaRun: 0, kahfRun: 0, monThu: 0, white: 0, arafa: 0, ashura: 0, cleanMonths: 0, goalsDone: 0 };
     const ks = Object.keys(S.days).filter((k) => k <= t).sort();
     let runFull = 0, runAz = 0, runSun = 0, runJ = 0, runK = 0;
     const whiteMap = {}, weekMap = {}, monthFull = {};
     if (ks.length) {
       for (let k = ks[0], i = 0; k <= t && i < 3000; k = addDays(k, 1), i++) {
         const d = S.days[k], isT = k === t;
-        const full = !!d && fullDay(d);
-        if (full) { G.fullDays++; runFull++; } else if (!isT) runFull = 0;
+        const full = !!d && planFull(k);
+        if (full) { G.fullDays++; runFull++; if (i > 0 && lowDay(addDays(k, -1))) G.returns++; } else if (!isT) runFull = 0;
         G.fullRun = Math.max(G.fullRun, runFull);
         const ym = k.slice(0, 6); monthFull[ym] = (monthFull[ym] || 0) + (full ? 1 : 0);
         const az = !!d && azDone(d, 'morning') && azDone(d, 'evening');
         if (az) { G.azBoth++; runAz++; } else if (!isT) runAz = 0;
         G.azRun = Math.max(G.azRun, runAz);
         const sc = d ? scores(k) : null, sun = !!sc && sc.sunna !== null && sc.sunna >= 0.999;
-        if (sun) runSun++; else if (!isT) runSun = 0;
+        if (sun) { runSun++; G.sunnaDays++; } else if (!isT) runSun = 0;
         G.sunnaRun = Math.max(G.sunnaRun, runSun);
         if (isFriday(k)) {
           const j = !!d && d.f.dhuhr === 'juma', kf = !!d && !!d.s.kahf;
-          if (j) runJ++; else if (!isT) runJ = 0;
-          if (kf) runK++; else if (!isT) runK = 0;
+          if (j) { runJ++; G.juma++; } else if (!isT) runJ = 0;
+          if (kf) { runK++; G.kahf++; } else if (!isT) runK = 0;
           G.jumaRun = Math.max(G.jumaRun, runJ); G.kahfRun = Math.max(G.kahfRun, runK);
         }
         if (!d) continue;
@@ -1823,7 +1862,7 @@
   const countDays = (keys, f) => keys.reduce((a, k) => a + (S.days[k] && f(S.days[k], k) ? 1 : 0), 0);
   const GOALS = [
     { id: 'fajr', tier: 1, t: 'Фаджр вовремя', u: 'дн.', max: 7, c: (ks) => countDays(ks, (d) => ON_TIME[d.f.fajr]) },
-    { id: 'full', tier: 1, t: 'Все пять намазов вовремя', u: 'дн.', max: 7, c: (ks) => countDays(ks, fullDay) },
+    { id: 'full', tier: 1, t: 'План дня выполнен', u: 'дн.', max: 7, c: (ks) => countDays(ks, (d, k) => planFull(k)) },
     { id: 'fajrJ', tier: 2, lvl: 'effort', t: 'Фаджр в мечети или джамаатом', u: 'раз', max: 7, c: (ks) => countDays(ks, (d) => jamaatSt(d.f.fajr)) },
     { id: 'jamaat', tier: 2, lvl: 'effort', t: 'Намазы в мечети или джамаатом', u: 'нам.', max: 35, step: 3, c: (ks) => ks.reduce((a, k) => a + (S.days[k] ? PRAYERS.filter((p) => jamaatSt(S.days[k].f[p.id])).length : 0), 0) },
     { id: 'azM', tier: 2, lvl: 'effort', t: 'Утренние азкары', u: 'дн.', max: 7, c: (ks) => countDays(ks, (d) => azDone(d, 'morning')) },
@@ -1923,7 +1962,7 @@
     out.push('<div class="card gm-stage"><div class="between" style="align-items:flex-end"><span class="col" style="gap:2px"><span class="eyebrow" style="padding:0">Путь</span><span class="big-serif" style="font-size:32px;line-height:1.05">' + (st.stage ? 'Ступень ' + st.stage : 'Начало пути') + '</span></span><span class="col" style="align-items:flex-end"><span class="num" style="font-family:var(--serif);font-size:30px;font-weight:700;line-height:1;color:var(--gold-hi)">' + G.fullDays + '</span><span class="small sub">' + plural(G.fullDays, 'день', 'дня', 'дней') + ' постоянства</span></span></div>' +
       starsRow(st.stage) +
       '<span class="bar" style="height:6px"><span style="width:' + Math.round(frac * 100) + '%"></span></span>' +
-      '<span class="small sub" style="line-height:1.5">' + (st.next ? 'До ' + (st.stage + 1) + '-й ступени — ' + toNext + ' ' + plural(toNext, 'день', 'дня', 'дней') + '. ' : 'Все ступени пройдены, машаАллах. ') + 'День постоянства — все пять фард-намазов вовремя. Пропуск не отнимает пройденного.</span>' +
+      '<span class="small sub" style="line-height:1.5">' + (st.next ? 'До ' + (st.stage + 1) + '-й ступени — ' + toNext + ' ' + plural(toNext, 'день', 'дня', 'дней') + '. ' : 'Все ступени пройдены, машаАллах. ') + 'День постоянства — день, когда ваш план выполнен (в тяжёлый день — минимальный). Пропуск не отнимает пройденного.</span>' +
       '<span class="gm-hadith">«Самые любимые Аллаху дела — те, что совершаются постоянно, даже если их немного». <span class="sub">Аль-Бухари 6464, Муслим 783</span></span></div>');
     out.push(vGoalCard(false));
     const past = (S.gam.goals || []).slice(-4).reverse();
@@ -1951,8 +1990,8 @@
     let run = 0; const sc = [];
     keys.forEach((k) => {
       const d = S.days[k];
-      const full = !!d && fullDay(d);
-      if (full) { R.full++; run++; R.best = Math.max(R.best, run); } else if (k !== t) run = 0;
+      const full = !!d && planFull(k);
+      if (full) { R.full++; run++; R.best = Math.max(R.best, run); if (lowDay(addDays(k, -1)) && addDays(k, -1) >= (firstMark() || k)) R.ret = (R.ret || 0) + 1; } else if (k !== t) run = 0;
       if (!d) return;
       PRAYERS.forEach((p) => { let st = d.f[p.id]; if (!st) return; R.marked++; if (st === 'juma') st = 'mosque'; R.cnt[st]++; });
       if (azDone(d, 'morning')) R.azM++;
@@ -1981,12 +2020,12 @@
       if (per(jam, R.days) - per(P.cnt.mosque + P.cnt.jamaat, P.days) > 0.15) better.push('больше намазов джамаатом');
       if (per(R.full, R.days) - per(P.full, P.days) > 0.08) better.push('больше дней постоянства');
       if (per(R.azM + R.azE, R.days) - per(P.azM + P.azE, P.days) > 0.15) better.push('чаще азкары');
-      if (R.best > P.best && R.best >= 3) better.push('лучшая серия длиннее');
+      if ((R.ret || 0) > 0) better.push('вы ' + R.ret + ' ' + plural(R.ret, 'раз', 'раза', 'раз') + ' вернулись к плану после спада');
     }
     const lvl = S.set.level;
     let h = '<div class="grab"></div><div class="gm-chron-head"><span class="eyebrow" style="padding:0">Летопись' + (isCur ? ' · на сегодня' : '') + '</span><span class="big-serif" style="font-size:40px;line-height:1">' + MONTHS_NOM[m - 1] + ' ' + y + '</span><span class="small sub">' + hspan + '</span></div>';
     if (!R.marked && !R.zikr) return h + '<div class="card empty"><span style="font-size:15px;font-weight:800">В этом месяце пока нет отметок</span></div><button class="btn gold block" data-a="closeSheet">Закрыть</button>';
-    h += '<div class="card gm-chron-hero"><span class="col" style="gap:4px"><span class="small sub" style="font-weight:700">Средний итог</span><span class="big-serif num" style="font-size:54px;line-height:1">' + pct(R.avg) + '</span></span><span class="col" style="align-items:flex-end;gap:2px"><span class="num" style="font-size:22px;font-weight:800">' + R.full + '</span><span class="small sub" style="text-align:right">' + plural(R.full, 'день', 'дня', 'дней') + ' постоянства<br>лучшая серия ' + R.best + '</span></span></div>';
+    h += '<div class="card gm-chron-hero"><span class="col" style="gap:4px"><span class="small sub" style="font-weight:700">Средний итог</span><span class="big-serif num" style="font-size:54px;line-height:1">' + pct(R.avg) + '</span></span><span class="col" style="align-items:flex-end;gap:2px"><span class="num" style="font-size:22px;font-weight:800">' + R.full + '</span><span class="small sub" style="text-align:right">' + plural(R.full, 'день', 'дня', 'дней') + ' по плану' + (R.ret ? '<br>возвращений: ' + R.ret : '') + '</span></span></div>';
     h += '<div class="tiles3">' + tile(R.marked + '<span class="sub" style="font-size:14px"> / ' + R.days * 5 + '</span>', 'намазов отмечено') + (lvl !== 'start' ? tile(R.cnt.mosque, 'в мечети', 'var(--gold-hi)') + tile(R.cnt.jamaat, 'джамаатом', 'var(--blue-text)') : tile(R.cnt.missed, 'пропущено')) + '</div>';
     if (lvl !== 'start') h += '<div class="tiles3">' + tile(R.azM + R.azE, 'азкаров (утро и вечер)') + tile(R.zikr >= 10000 ? (R.zikr / 1000).toFixed(1).replace('.0', '').replace('.', ',') + 'к' : R.zikr, 'зикров') + tile(lvl === 'ihsan' ? R.fasts : R.cnt.qada, lvl === 'ihsan' ? 'дней поста' : 'восполнено') + '</div>';
     if (R.badges.length) h += '<div class="card pad" style="display:flex;flex-direction:column;gap:10px"><span style="font-size:15px;font-weight:800">Новые знаки</span><div class="row" style="flex-wrap:wrap;gap:10px">' + R.badges.map((b) => '<span class="col" style="align-items:center;width:72px;gap:4px">' + emblem(b, 52, true) + '<span class="small" style="text-align:center;font-weight:700;line-height:1.2">' + b.t + '</span></span>').join('') + '</div></div>';
@@ -3095,7 +3134,8 @@
   /* ===== действия ===== */
   const A = {
     onbLevel(v) { S.onbLevel = v; haptic('select'); render(); },
-    onbStart() { S.set.level = S.onbLevel; if (!S.set.plan) S.set.plan = { h: [['20000101', packItems(PRESET[S.onbLevel] || [])]], mn: '' }; saveSettings(); haptic('notify', 'success'); render(); $('#scroll').scrollTop = 0; },
+    onbPick(v) { const p = S.onbPick = Object.assign({}, S.onbPick); p[v] = !p[v]; if (v === 'ratib' && p.ratib) p.fajrSunna = false; if (v === 'fajrSunna' && p.fajrSunna) p.ratib = false; haptic('select'); render(); },
+    onbStart() { const items = onbItems(); S.set.level = items.length >= 8 ? 'ihsan' : items.length ? 'effort' : 'start'; S.set.plan = { h: [['20000101', packItems(items)]], mn: '' }; saveSettings(); haptic('notify', 'success'); render(); $('#scroll').scrollTop = 0; },
     tab(v) { const sub = v.split(':'); v = sub[0]; if (sub[1]) S.prog.period = sub[1]; if (S.tab === v && v === 'quran') S.quran.reader = null; S.tab = v; S.sheet = null; render(); $('#scroll').scrollTop = 0; },
     zikr(v) { const p = String(v).split(':'); S.zView = p[0]; if (p[1]) S.azTab = p[1]; S.tab = 'zikr'; render(); $('#scroll').scrollTop = 0; },
     // хадис открывается поверх листа, из которого его позвали (план, намаз), и «Назад» возвращает туда же
