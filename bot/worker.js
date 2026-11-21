@@ -73,11 +73,13 @@ async function upsertUser(env, uid, chat, name) {
 }
 async function getDay(env, uid, k) {
   const r = await db(env).prepare('SELECT f, am, ae, sl, u FROM days WHERE uid = ? AND k = ?').bind(uid, k).first();
-  return r ? { f: JSON.parse(r.f || '{}'), am: !!r.am, ae: !!r.ae, sl: !!r.sl, u: r.u || 0 } : { f: {}, am: false, ae: false, sl: false, u: 0 };
+  if (!r) return { f: {}, am: false, ae: false, sl: false, u: 0, pc: null };
+  const f = JSON.parse(r.f || '{}'), pc = f._pc || null; delete f._pc; // итог плана из приложения хранится рядом с отметками
+  return { f, am: !!r.am, ae: !!r.ae, sl: !!r.sl, u: r.u || 0, pc };
 }
 async function putDay(env, uid, k, d) {
   await db(env).prepare('INSERT INTO days (uid, k, f, am, ae, sl, u) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(uid, k) DO UPDATE SET f = excluded.f, am = excluded.am, ae = excluded.ae, sl = excluded.sl, u = excluded.u')
-    .bind(uid, k, JSON.stringify(d.f), d.am ? 1 : 0, d.ae ? 1 : 0, d.sl ? 1 : 0, d.u || 0).run();
+    .bind(uid, k, JSON.stringify(d.pc ? Object.assign({}, d.f, { _pc: d.pc }) : d.f), d.am ? 1 : 0, d.ae ? 1 : 0, d.sl ? 1 : 0, d.u || 0).run();
 }
 // f[p] = [код, время, источник: 'a' приложение | 'b' бот]
 const statusOf = (d, p) => (d.f[p] && d.f[p][0]) || '';
@@ -90,8 +92,19 @@ async function putCard(env, uid, k, p, msg, state) { await db(env).prepare('INSE
    Приложение присылает дни с временем изменения u и время, когда оно в последний раз получало отметки бота (seen).
    Отметка бота сохраняется, если приложение о ней не знало (в приложении пусто, а бот отметил после seen)
    или если она новее изменения дня в приложении. Ответ — отметки, которых в приложении нет. */
+const validPc = (p) => (p && +p.n >= 5 && +p.n <= 60 ? { n: +p.n, dn: Math.max(0, +p.dn || 0), ex: Math.max(0, +p.ex || 0), jm: Array.isArray(p.jm) ? p.jm.filter((x) => PR.some((y) => y[0] === x)) : [] } : null);
+// итог дня по личному плану: фарды и джамаат — по отметкам сервера (в том числе из бота), остальное — как прислало приложение
+export function planOf(d) {
+  const pc = d.pc; if (!pc) return null;
+  const JM = { mosque: 1, jamaat: 1, juma: 1 };
+  const fd = PR.filter(([p]) => OK_STATUS(statusOf(d, p))).length;
+  const jmIn = PR.filter(([p]) => pc.jm.indexOf(p) >= 0 && JM[statusOf(d, p)]).length;
+  const jmEx = PR.filter(([p]) => pc.jm.indexOf(p) < 0 && JM[statusOf(d, p)]).length;
+  const done = fd + pc.dn + jmIn, complete = done >= pc.n, ex = pc.ex + jmEx;
+  return { n: pc.n, done, ex, complete, pct: Math.round((done + (complete ? ex : 0)) * 100 / pc.n), missed: PR.some(([p]) => statusOf(d, p) === 'missed') };
+}
 export function mergeDay(server, app, seen) {
-  const out = { f: {}, am: !!app.am, ae: !!app.ae, sl: !!app.sl, u: Math.max(server.u || 0, app.u || 0) }, diff = {};
+  const out = { f: {}, am: !!app.am, ae: !!app.ae, sl: !!app.sl, u: Math.max(server.u || 0, app.u || 0), pc: validPc(app.pc) || server.pc || null }, diff = {};
   PR.forEach(([p]) => {
     const s = server.f[p], a = (app.f || {})[p] || '';
     const botWins = s && s[2] === 'b' && s[0] !== a && ((!a && s[1] > (seen || 0)) || s[1] > (app.u || 0));
@@ -278,8 +291,14 @@ async function send(env, u, text, kb, quiet) {
 async function sendSummary(env, u, k, sd, d) {
   const marked = PR.filter(([p]) => OK_STATUS(statusOf(d, p))).length;
   const lines = PR.map(([p]) => { const st = statusOf(d, p); return (OK_STATUS(st) ? '✓ ' : '○ ') + pname(p, sd.fri) + (st ? ' — ' + ST[st] : ' — не отмечен'); });
+  const pl = planOf(d);
+  let head = 'Намазы: ' + marked + ' из 5', tail = marked === 5 ? '\n\nАльхамдулиллях — все пять намазов.' : '';
+  if (pl) {
+    head = 'План дня: ' + pl.pct + '% · ' + pl.done + ' из ' + pl.n + (pl.ex ? (pl.complete ? ' и ' + pl.ex + ' сверх плана' : ' · ещё ' + pl.ex + ' отдельно') : '');
+    tail = pl.complete ? (pl.pct > 100 ? '\n\nЭто тауфик от Аллаха. Просите у Него постоянства.' : '\n\nАльхамдулиллях, план выполнен. Пусть Аллах примет.') : (pl.missed ? '\n\nПропущенный намаз можно восполнить. Завтра — новый день.' : '');
+  }
   const az = 'Азкары: утро ' + (d.am ? '✓' : '—') + ' · вечер ' + (d.ae ? '✓' : '—');
-  await send(env, u, '<b>Итог дня · ' + dayTitle(k) + '</b>\n\nНамазы: ' + marked + ' из 5\n' + lines.join('\n') + '\n\n' + az + (marked === 5 ? '\n\nАльхамдулиллях — все пять намазов.' : ''), [appBtn(env, 'Подробнее в приложении', 'progress')].filter((x) => x.length), true);
+  await send(env, u, '<b>Итог дня · ' + dayTitle(k) + '</b>\n\n' + head + '\n' + lines.join('\n') + '\n\n' + az + tail, [appBtn(env, 'Подробнее в приложении', 'progress')].filter((x) => x.length), true);
 }
 export async function tick(env, now) {
   const { results } = await db(env).prepare('SELECT * FROM users WHERE sched IS NOT NULL AND blocked = 0').all();
