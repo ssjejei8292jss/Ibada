@@ -232,7 +232,10 @@
   function encodeDay(d) {
     const f = PRAYERS.map((p) => F_CODE[d.f[p.id]] || '-').join('');
     const s = SUNNA_KEYS.map((k) => (d.s[k] ? '1' : '0')).join('');
-    return [d.t + f + s, d.q || 0, d.w || 0, (d.am || []).join('.'), (d.ae || []).join('.'), (d.z || []).join('.'), P_CODE[d.p] || '', d.u ? Math.round(d.u / 1000).toString(36) : '', (d.sl || []).some(Boolean) ? d.sl.join('.') : ''].join('|').replace(/\|$/, '');
+    const out = [d.t + f + s, d.q || 0, d.w || 0, (d.am || []).join('.'), (d.ae || []).join('.'), (d.z || []).join('.'), P_CODE[d.p] || '', d.u ? Math.round(d.u / 1000).toString(36) : '', (d.sl || []).some(Boolean) ? d.sl.join('.') : ''].join('|').replace(/\|$/, '');
+    if (!d.mn) return out;
+    const parts = out.split('|'); while (parts.length < 9) parts.push('');
+    return parts.concat('m').join('|'); // минимальный день (v2.4)
   }
   function decodeDay(str) {
     const d = blankDay();
@@ -248,23 +251,21 @@
       d.p = P_DECODE[parts[6]] || '';
       d.u = parts[7] ? (parseInt(parts[7], 36) || 0) * 1000 : 0; // когда день последний раз меняли (для слияния между устройствами)
       d.sl = nums(parts[8]); // азкары перед сном (v14)
+      if (parts[9] === 'm') d.mn = 1; // минимальный день (v2.4)
     } catch (e) {}
     return d;
   }
-  const isEmptyDay = (d) => !d || (!Object.keys(d.f).length && !Object.keys(d.s).length && !d.q && !d.w && !(d.am || []).some(Boolean) && !(d.ae || []).some(Boolean) && !(d.z || []).some(Boolean) && !(d.sl || []).some(Boolean) && !d.p && d.t === 'n');
+  const isEmptyDay = (d) => !d || (!d.mn && !Object.keys(d.f).length && !Object.keys(d.s).length && !d.q && !d.w && !(d.am || []).some(Boolean) && !(d.ae || []).some(Boolean) && !(d.z || []).some(Boolean) && !(d.sl || []).some(Boolean) && !d.p && d.t === 'n');
   const halfKey = (k) => 'h_' + k.slice(0, 6) + '_' + (+k.slice(6, 8) <= 15 ? '1' : '2');
   const getDay = (k) => S.days[k] || blankDay();
   const ensureDay = (k) => { if (!S.days[k]) S.days[k] = blankDay(); return S.days[k]; };
 
   /* ===== план и баллы ===== */
+  // что входит в план этого дня (1 — в плане); цель тахаджуда — 2 ракаата, дуа после омовения — 1 раз
   function planFor(k) {
-    const d = getDay(k), lvl = S.set.level || 'ihsan';
-    const p = { fajrSunna: 1, fajrAzkar: 1, duha: 1, dhuhrBefore: 1, dhuhrAfter: 1, dhuhrAzkar: 1, asrAzkar: 1, maghribAfter: 1, maghribAzkar: 1, ishaAfter: 1, ishaAzkar: 1, witr: 1, sadaqa: 1, kahf: 0, ghusl: 0, qiyam: 8, wudu: 5 };
-    if (isFriday(k)) { p.dhuhrBefore = 0; p.dhuhrAfter = 0; p.kahf = 1; p.ghusl = 1; }
-    if (d.t === 't') Object.assign(p, { duha: 0, dhuhrBefore: 0, dhuhrAfter: 0, maghribAfter: 0, ishaAfter: 0, qiyam: 0, kahf: 0, ghusl: 0 });
-    if (d.t === 's') Object.keys(p).forEach((x) => { p[x] = 0; });
-    if (lvl === 'start') Object.keys(p).forEach((x) => { p[x] = 0; });
-    if (lvl === 'effort') Object.keys(p).forEach((x) => { if (PER_PRAYER_KEYS.indexOf(x) < 0) p[x] = 0; });
+    const p = {}, dp = dayPlan(k);
+    SUNNA_KEYS.forEach((x) => { p[x] = dp.inPlan[x] ? 1 : 0; });
+    p.qiyam = dp.inPlan.qiyam ? 2 : 0; p.wudu = dp.inPlan.wudu ? 1 : 0;
     return p;
   }
   const azDone = (d, which) => D.AZKAR[which].every((a, i) => ((which === 'morning' ? d.am : d.ae)[i] || 0) >= a.n);
@@ -281,8 +282,9 @@
     const zikr = lvl === 'start' ? null : D.ZIKRS.reduce((a, z, i) => a + Math.min((d.z[i] || 0) / 100, 1), 0) / D.ZIKRS.length;
     const parts = [[fard, 0.5], [sunna, 0.2], [azkar, 0.15], [zikr, 0.15]].filter((x) => x[0] !== null);
     const ws = parts.reduce((a, x) => a + x[1], 0);
-    const overall = parts.reduce((a, x) => a + x[0] * x[1], 0) / ws;
-    return { fard, sunna, azkar, zikr, overall };
+    const plan2 = dayPlan(k);
+    // итог дня — доля личного плана (v2.4): 1 = план выполнен, больше 1 — сверх плана
+    return { fard, sunna, azkar, zikr, overall: plan2.pct, old: parts.reduce((a, x) => a + x[0] * x[1], 0) / ws, plan: plan2 };
   }
   const fardDoneCount = (d) => PRAYERS.filter((p) => d.f[p.id] && d.f[p.id] !== 'missed').length;
   function streak(test) {
@@ -292,10 +294,136 @@
     return n;
   }
   // сунна при намазе для листа статуса (пусто на уровне «Начало» и в простом режиме)
-  const APP_VERSION = '2.3.0';
-  function prayerSunna(id, k) { const plan = planFor(k); return S.set.detailed && S.set.level !== 'start' ? (PER_PRAYER[id] || []).filter((x) => plan[x[0]] > 0) : []; }
+  const APP_VERSION = '2.4.0';
+  function prayerSunna(id, k) {
+    if (!(S.set.detailed && S.set.level !== 'start')) return [];
+    const d = getDay(k), dp = dayPlan(k);
+    return (PER_PRAYER[id] || []).filter((x) => PIX[x[0]] && piApplies(PIX[x[0]], k, d)).map((x) => [x[0], x[1], !!dp.inPlan[x[0]]]);
+  }
   function qadaDebt() { let n = S.set.qadaBase || 0; Object.keys(S.days).forEach((k) => { const d = S.days[k]; PRAYERS.forEach((p) => { if (d.f[p.id] === 'missed') n++; }); }); return Math.max(0, n); }
   function fastDebt() { let n = S.set.fastBase || 0; Object.keys(S.days).forEach((k) => { const p = S.days[k].p; if (p === 'missed') n++; if (p === 'qada') n--; }); return Math.max(0, n); }
+
+  /* ===== личный план (v2.4) =====
+     Миссия: свой план дня = 100%, всё сверх плана — перевыполнение (110%, 150%…), но только после 100%.
+     Пять фардов есть в любом плане. Каждый пункт весит одинаково. Намаз в мечети или джамаатом, если он не входит
+     в план, — дело сверх плана. Тексты хадисов до публичного запуска проверяет знающий человек (см. PLAN_HADITH.md). */
+  const JM = { mosque: 1, jamaat: 1, juma: 1 };
+  const PG = [ // группы редактора плана
+    ['jm', 'Намаз в мечети или джамаатом', '«Намаз в джамаате превосходит намаз в одиночку на двадцать семь степеней»', 'аль-Бухари 645, Муслим 650'],
+    ['ratib', 'Сунна-намазы (ратибат)', '«Кто совершает двенадцать ракаатов в течение дня и ночи, тому будет построен дом в Раю»', 'Муслим 728'],
+    ['after', 'Азкары после намаза', '«Кто после каждого намаза скажет „Субханаллах“ 33 раза, „Альхамдулиллях“ 33 раза, „Аллаху акбар“ 33 раза и завершит сотню словами единобожия, тому простятся грехи, даже если их как пены морской»', 'Муслим 597'],
+    ['azkar', 'Утро, вечер и сон', '', ''],
+    ['night', 'Ночь', '', ''],
+    ['day', 'В течение дня', '', ''],
+    ['fri', 'Пятница', '', ''],
+    ['fast', 'Желательный пост', '', '']
+  ];
+  const zTotal = (d) => (d.z || []).reduce((a, b) => a + (b || 0), 0);
+  const readOn = (k) => !!(S.read && S.read.log && S.read.log[k] > 0);
+  // b — коротко, для строки на главной; h и src — хадис для редактора плана
+  const PI = [
+    { id: 'jm_fajr', g: 'jm', t: 'Фаджр в мечети или джамаатом', pr: 'fajr', ok: (d) => !!JM[d.f.fajr], b: 'Словно простоял всю ночь · Муслим', h: '«Кто совершил Ишу в джамаате, тот словно простоял половину ночи, а кто совершил и Фаджр в джамаате, тот словно простоял всю ночь»', src: 'Муслим 656' },
+    { id: 'jm_dhuhr', g: 'jm', t: 'Зухр в мечети или джамаатом', pr: 'dhuhr', ok: (d) => !!JM[d.f.dhuhr], b: 'Лучше в 27 раз · аль-Бухари, Муслим' },
+    { id: 'jm_asr', g: 'jm', t: 'Аср в мечети или джамаатом', pr: 'asr', ok: (d) => !!JM[d.f.asr], b: 'Лучше в 27 раз · аль-Бухари, Муслим' },
+    { id: 'jm_maghrib', g: 'jm', t: 'Магриб в мечети или джамаатом', pr: 'maghrib', ok: (d) => !!JM[d.f.maghrib], b: 'Лучше в 27 раз · аль-Бухари, Муслим' },
+    { id: 'jm_isha', g: 'jm', t: 'Иша в мечети или джамаатом', pr: 'isha', ok: (d) => !!JM[d.f.isha], b: 'Словно простоял полночи · Муслим', h: '«Кто совершил Ишу в джамаате, тот словно простоял половину ночи»', src: 'Муслим 656' },
+    { id: 'fajrSunna', g: 'ratib', t: 'Сунна Фаджра', m: '2 ракаата до фарда', pr: 'fajr', b: 'Лучше этого мира · Муслим', h: '«Два ракаата перед Фаджром лучше этого мира и всего, что в нём»', src: 'Муслим 725' },
+    { id: 'dhuhrBefore', g: 'ratib', t: 'Сунна до Зухра', m: '4 ракаата', pr: 'dhuhr', notFri: 1, notTravel: 1, b: 'Запретит для Огня · Абу Дауд', h: '«Кто постоянно совершает четыре ракаата до Зухра и четыре после него, того Аллах сделает запретным для Огня»', src: 'Абу Дауд 1269, ат-Тирмизи 428' },
+    { id: 'dhuhrAfter', g: 'ratib', t: 'Сунна после Зухра', m: '2 ракаата', pr: 'dhuhr', notFri: 1, notTravel: 1, b: 'Часть 12 ракаатов · Муслим' },
+    { id: 'maghribAfter', g: 'ratib', t: 'Сунна после Магриба', m: '2 ракаата', pr: 'maghrib', notTravel: 1, b: 'Часть 12 ракаатов · Муслим' },
+    { id: 'ishaAfter', g: 'ratib', t: 'Сунна после Иши', m: '2 ракаата', pr: 'isha', notTravel: 1, b: 'Часть 12 ракаатов · Муслим' },
+    { id: 'fajrAzkar', g: 'after', t: 'Азкары после Фаджра', pr: 'fajr', b: 'Прощение грехов · Муслим' },
+    { id: 'dhuhrAzkar', g: 'after', t: 'Азкары после Зухра', pr: 'dhuhr', b: 'Прощение грехов · Муслим' },
+    { id: 'asrAzkar', g: 'after', t: 'Азкары после Асра', pr: 'asr', b: 'Прощение грехов · Муслим' },
+    { id: 'maghribAzkar', g: 'after', t: 'Азкары после Магриба', pr: 'maghrib', b: 'Прощение грехов · Муслим' },
+    { id: 'ishaAzkar', g: 'after', t: 'Азкары после Иши', pr: 'isha', b: 'Прощение грехов · Муслим' },
+    { id: 'am', g: 'azkar', t: 'Утренние азкары', m: 'После Фаджра', ok: (d) => azDone(d, 'morning'), b: 'Сайид аль-истигфар · аль-Бухари', h: '«Кто скажет его днём, будучи убеждён в нём, и умрёт в тот же день до вечера, тот — из обитателей Рая»', src: 'аль-Бухари 6306' },
+    { id: 'ae', g: 'azkar', t: 'Вечерние азкары', m: 'После Асра, до Магриба', ok: (d) => azDone(d, 'evening'), b: 'Сайид аль-истигфар · аль-Бухари', h: '«А кто скажет его ночью, будучи убеждён в нём, и умрёт до утра, тот — из обитателей Рая»', src: 'аль-Бухари 6306' },
+    { id: 'sl', g: 'azkar', t: 'Азкары перед сном', m: 'Аят аль-Курси, три суры, 33 · 33 · 34', ok: (d) => slProgress(d).all, b: 'Хранитель до утра · аль-Бухари', h: 'Об аяте аль-Курси перед сном: «С тобой будет хранитель от Аллаха, и шайтан не приблизится к тебе до утра»', src: 'аль-Бухари 2311' },
+    { id: 'witr', g: 'night', t: 'Витр', m: 'После Иши, до рассвета', b: 'Последний намаз ночи · аль-Бухари', h: '«Сделайте витр последним вашим намазом ночью»', src: 'аль-Бухари 998, Муслим 751' },
+    { id: 'qiyam', g: 'night', t: 'Тахаджуд', m: 'Ночной намаз, от 2 ракаатов', notTravel: 1, ok: (d) => (d.q || 0) >= 2, b: 'Лучший после обязательного · Муслим', h: '«Лучший намаз после обязательного — ночной намаз»', src: 'Муслим 1163' },
+    { id: 'duha', g: 'day', t: 'Духа', m: 'После восхода, до Зухра', notTravel: 1, b: 'Садака за каждый сустав · Муслим', h: '«Каждое утро за каждый сустав любого из вас полагается садака… и всё это восполняют два ракаата духа»', src: 'Муслим 720' },
+    { id: 'sadaqa', g: 'day', t: 'Садака', m: 'Любое пожертвование или доброе дело', b: 'Не уменьшает имущества · Муслим', h: '«Садака не уменьшает имущества»', src: 'Муслим 2588' },
+    { id: 'quran', g: 'day', t: 'Чтение Корана', m: 'Хотя бы страница по плану чтения', ok: (d, k) => readOn(k), b: 'Заступник в Судный день · Муслим', h: '«Читайте Коран: в День воскресения он придёт заступником за своих людей»', src: 'Муслим 804' },
+    { id: 'zikr', g: 'day', t: 'Зикры', m: '100 за день', ok: (d) => zTotal(d) >= 100, b: 'Как пена морская · аль-Бухари', h: '«Кто скажет „Субханаллахи ва бихамдихи“ сто раз за день, с того снимутся грехи, даже если их как пены морской»', src: 'аль-Бухари 6405, Муслим 2691' },
+    { id: 'wudu', g: 'day', t: 'Дуа после омовения', m: 'Шахада после вуду', ok: (d) => (d.w || 0) >= 1, b: 'Восемь врат Рая · Муслим', h: '«Кто совершит омовение и скажет: „Ашхаду ан ля иляха илляллах…“, для того откроются восемь врат Рая»', src: 'Муслим 234' },
+    { id: 'kahf', g: 'fri', t: 'Сура аль-Кахф', fri: 1, b: 'Свет до следующей пятницы', h: '«Кто прочтёт суру „Пещера“ в пятницу, для того свет будет сиять между двумя пятницами»', src: 'аль-Хаким, аль-Байхаки' },
+    { id: 'ghusl', g: 'fri', t: 'Гусль', m: 'Перед пятничным намазом', fri: 1, notTravel: 1, b: 'Сунна пятницы · аль-Бухари', h: '«Когда кто-нибудь из вас идёт на джума, пусть совершит гусль»', src: 'аль-Бухари 877, Муслим 844' },
+    { id: 'fast', g: 'fast', t: 'Желательный пост', m: 'Понедельник, четверг, белые дни, Арафа, Ашура', when: (k) => { const fi = fastingInfo(k); return !!fi && fi.kind === 'rec'; }, ok: (d) => d.p === 'fast', b: 'Дела представляются Аллаху · ат-Тирмизи', h: '«Дела представляются Аллаху в понедельник и четверг, и я люблю, чтобы моё дело было представлено, когда я пощусь»', src: 'ат-Тирмизи 747' }
+  ];
+  PI.forEach((x, i) => { x.i = i; if (!x.ok) x.ok = (d) => !!(d.s || {})[x.id]; });
+  const PIX = {}; PI.forEach((x) => { PIX[x.id] = x; });
+  const FARD_HADITH = ['«Любимейшее из того, чем раб приближается ко Мне, — то, что Я вменил ему в обязанность»', 'хадис кудси, аль-Бухари 6502'];
+  const STEADY_HADITH = ['«Самые любимые Аллахом дела — постоянные, даже если они малы»', 'аль-Бухари 6464, Муслим 783'];
+  const PRESET = {
+    start: [],
+    effort: ['fajrSunna', 'dhuhrBefore', 'dhuhrAfter', 'maghribAfter', 'ishaAfter', 'fajrAzkar', 'dhuhrAzkar', 'asrAzkar', 'maghribAzkar', 'ishaAzkar', 'am', 'ae']
+  };
+  PRESET.ihsan = PRESET.effort.concat(['witr', 'duha', 'sadaqa', 'qiyam', 'sl', 'zikr', 'kahf', 'ghusl']);
+  // план хранится в настройках компактно: набор пунктов — строка из номеров PI в base36; история — с какого дня действовал набор
+  const packItems = (ids) => PI.filter((x) => ids.indexOf(x.id) >= 0).map((x) => x.i.toString(36)).join('');
+  const unpackItems = (s) => String(s || '').split('').map((c) => PI[parseInt(c, 36)]).filter(Boolean).map((x) => x.id);
+  function planSt() {
+    const P = S.set.plan;
+    if (P && P.h && P.h.length) return P;
+    return { h: [['20000101', packItems(PRESET[S.set.level] || [])]], mn: '' };
+  }
+  function planItemsAt(k) { const H = planSt().h; let s = H[0][1]; H.forEach((x) => { if (x[0] <= k) s = x[1]; }); return unpackItems(s); }
+  const planNow = () => planItemsAt(todayKey());
+  const planMin = () => unpackItems(planSt().mn);
+  function setPlanItems(ids) {
+    const P = S.set.plan = JSON.parse(JSON.stringify(planSt())), t = todayKey(), s = packItems(ids), last = P.h[P.h.length - 1];
+    if (last[0] === t || last[1] === s) last[1] = s; else P.h.push([t, s]);
+    while (P.h.length > 30) { P.h[1][0] = P.h[0][0]; P.h.shift(); }
+    P.mn = packItems(unpackItems(P.mn).filter((id) => ids.indexOf(id) >= 0));
+    saveSettings(); dataVer++; botSoon(1500);
+  }
+  function setPlanMin(ids) { const P = S.set.plan = JSON.parse(JSON.stringify(planSt())); P.mn = packItems(ids); saveSettings(); dataVer++; }
+  function piApplies(x, k, d) {
+    if (x.fri && !isFriday(k)) return false;
+    if (x.notFri && isFriday(k)) return false;
+    if (x.when && !x.when(k)) return false;
+    if (d.t === 't' && x.notTravel) return false;
+    return true;
+  }
+  // итог дня по плану: n пунктов (5 фардов + выбранное), done выполнено, ex дел сверх плана, pct — доля (может быть больше 1)
+  function dayPlan(k) {
+    const d = getDay(k);
+    let ids = d.mn ? planMin() : planItemsAt(k);
+    if (d.t === 's') ids = [];
+    const items = ids.map((id) => PIX[id]).filter((x) => x && piApplies(x, k, d));
+    const fd = PRAYERS.filter((p) => d.f[p.id] && d.f[p.id] !== 'missed').length;
+    const missed = PRAYERS.some((p) => d.f[p.id] === 'missed');
+    const idone = items.filter((x) => x.ok(d, k)).length;
+    const inPlan = {}; items.forEach((x) => { inPlan[x.id] = 1; });
+    const extras = PI.filter((x) => !inPlan[x.id] && piApplies(x, k, d) && x.ok(d, k));
+    const n = 5 + items.length, done = fd + idone, complete = done >= n;
+    return { n, done, fd, idone, items, inPlan, extras, ex: extras.length, complete, missed, pct: (done + (complete ? extras.length : 0)) / n, mode: d.mn ? 'm' : d.t };
+  }
+  const pctText = (v) => Math.round((v || 0) * 100) + '%';
+  // возвращение: два прошлых дня подряд были тяжёлыми (меньше половины плана)
+  function returnDue() {
+    const t = todayKey(), first = firstMark();
+    if (!first || first > addDays(t, -3) || S.set.retSeen === t || getDay(t).mn) return false;
+    const low = (k) => { const s = scores(k); return !s || s.overall < 0.5; };
+    return low(addDays(t, -1)) && low(addDays(t, -2)) && !dayPlan(t).complete;
+  }
+  // предложение внести в план дело, которое 13 из 14 дней делается сверх плана (не чаще раза в две недели)
+  function planSuggestion() {
+    const t = todayKey();
+    if (S.set.sugNext && t < S.set.sugNext) return null;
+    const days = []; for (let i = 1; i <= 14; i++) days.push(addDays(t, -i));
+    if (days.filter((k) => { const s = scores(k); return s && s.plan && s.plan.complete; }).length < 8) return null;
+    const cur = planNow();
+    let best = null;
+    PI.forEach((x) => {
+      if (cur.indexOf(x.id) >= 0 || x.fri || x.when) return;
+      let ap = 0, ok = 0;
+      days.forEach((k) => { const d = getDay(k); if (!piApplies(x, k, d)) return; ap++; if (x.ok(d, k)) ok++; });
+      if (ap >= 10 && ok >= Math.ceil(ap * 13 / 14) && (!best || ok > best.ok)) best = { x, ok, ap };
+    });
+    return best;
+  }
 
   /* ===== хранилище ===== */
   const store = {
@@ -349,6 +477,7 @@
      Менялось и там, и здесь — объединяем отметки: статусы и галочки складываются, счётчики (зикры, азкары) берутся большими. */
   function unionDay(a, c) {
     const d = { t: a.t !== 'n' ? a.t : c.t, f: Object.assign({}, c.f, a.f), s: Object.assign({}, c.s, a.s), q: Math.max(a.q || 0, c.q || 0), w: Math.max(a.w || 0, c.w || 0), p: a.p || c.p || '' };
+    if (a.mn || c.mn) d.mn = 1;
     ['am', 'ae', 'z', 'sl'].forEach((f) => { const x = a[f] || [], y = c[f] || []; d[f] = Array.from({ length: Math.max(x.length, y.length) }, (_, i) => Math.max(x[i] || 0, y[i] || 0)); });
     d.u = Math.max(a.u || 0, c.u || 0); d.b = c.u || 0;
     return d;
@@ -499,7 +628,11 @@
     }
     return { tz: S.set.tz || (Intl.DateTimeFormat().resolvedOptions().timeZone || ''), days };
   }
-  function dayPayload(k) { const d = getDay(k); return { u: d.u || 0, t: d.t, f: d.f, s: d.s, q: d.q || 0, w: d.w || 0, am: azDone(d, 'morning'), ae: azDone(d, 'evening'), sl: slProgress(d).all, z: (d.z || []).slice(0, 8), p: d.p || '' }; }
+  function dayPayload(k) { const d = getDay(k); return { u: d.u || 0, t: d.t, f: d.f, s: d.s, q: d.q || 0, w: d.w || 0, am: azDone(d, 'morning'), ae: azDone(d, 'evening'), sl: slProgress(d).all, pc: planPc(k), z: (d.z || []).slice(0, 8), p: d.p || '' }; }
+  function planPc(k) {
+    const dp = dayPlan(k), jm = (x) => x.g === 'jm';
+    return { n: dp.n, dn: dp.items.filter((x) => !jm(x) && x.ok(getDay(k), k)).length, ex: dp.extras.filter((x) => !jm(x)).length, jm: dp.items.filter(jm).map((x) => x.pr) };
+  }
   async function postSync(body) {
     const ctrl = new AbortController(); const to = setTimeout(() => ctrl.abort(), 30000);
     try {
@@ -623,6 +756,13 @@
     return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '" aria-hidden="true"><circle cx="' + size / 2 + '" cy="' + size / 2 + '" r="' + r + '" fill="none" stroke="var(--track)" stroke-width="' + sw + '"/>' + (v > 0.005 ? '<circle cx="' + size / 2 + '" cy="' + size / 2 + '" r="' + r + '" fill="none" stroke="' + (color || 'var(--gold)') + '" stroke-width="' + sw + '" stroke-linecap="round" stroke-dasharray="' + dash + ' ' + C.toFixed(1) + '" transform="rotate(-90 ' + size / 2 + ' ' + size / 2 + ')"/>' : '') + '</svg>';
   };
 
+  // кольцо плана (v2.4): первый круг — план (изумрудный), всё сверх 100% — второй, золотой круг поверх
+  const ring2 = (v, size, r, sw) => {
+    const C = 2 * Math.PI * r, c = size / 2, a = clamp(v || 0, 0, 1), b = clamp((v || 0) - 1, 0, 1);
+    const arc = (f, color, cls) => '<circle class="' + cls + '" cx="' + c + '" cy="' + c + '" r="' + r + '" fill="none" stroke="' + color + '" stroke-width="' + sw + '" stroke-linecap="round" stroke-dasharray="' + (f * C).toFixed(1) + ' ' + C.toFixed(1) + '" transform="rotate(-90 ' + c + ' ' + c + ')"/>';
+    return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 ' + size + ' ' + size + '" aria-hidden="true"><circle cx="' + c + '" cy="' + c + '" r="' + r + '" fill="none" stroke="var(--track)" stroke-width="' + sw + '"/>' + (a > 0.005 ? arc(a, 'var(--emerald)', 'rg-plan') : '') + (b > 0.005 ? arc(b, 'var(--gold)', 'rg-over') : '') + '</svg>';
+  };
+
   /* ===== экраны ===== */
   function vOnboarding() {
     const lv = [
@@ -740,26 +880,28 @@
       '<span class="ck2' + (st ? ' st-' + st : now ? ' now' : '') + '">' + (st ? I.st[st] : '') + '</span></button>';
   }
 
+  // «Мой план» и «Сверх плана» (v2.4): дела дня делятся по личному плану; при намазах — сунна и азкары отмечаются в листе намаза
   function vTodayMore(k, d, plan, lvl, isToday) {
-    const rows = []; let n = 0, done = 0;
-    // порядок по времени суток: утром выше духа, ночью — витр и киям
+    const dp = dayPlan(k), rows = [];
     const sk = isToday ? skyState() : null, morning = !!(sk && !sk.current && sk.now >= sk.T.sunrise), night = !!(sk && (sk.now >= sk.T.isha || sk.now < sk.T.fajr));
-    const add = (pr, html) => rows.push([pr, rows.length, html]);
+    const add = (id, pr, html) => rows.push({ id, pr, i: rows.length, html });
     const ck = (on, cls) => '<span class="ck2' + (on ? ' st-done' : cls ? ' ' + cls : '') + '">' + (on ? I.st.done : '') + '</span>';
+    const sub = (id, m) => { const x = PIX[id]; return [m, x && !dp.inPlan[id] && x.b ? x.b : ''].filter(Boolean).join(' · '); };
     const item = (act, val, t, m, right, extra) => '<button class="li" data-a="' + act + '"' + (val !== '' ? ' data-v="' + val + '"' : '') + (extra || '') + '><span class="li-c"><span class="li-t">' + t + '</span>' + (m ? '<span class="li-m">' + m + '</span>' : '') + '</span>' + right + '</button>';
     const meter = (v, frac) => '<span class="li-v"><b class="num">' + v + '</b><i><s style="width:' + Math.round(clamp(frac, 0, 1) * 100) + '%"></s></i></span>';
-    const check = (pr, key, t, m) => { if (!(plan[key] > 0)) return; const on = !!d.s[key]; n++; if (on) done++; add(pr, item('sunna', key, t, m, ck(on), ' aria-pressed="' + on + '"')); };
-    if (lvl !== 'start') {
-      const which = azByTime(), list = D.AZKAR[which], cnt = which === 'morning' ? d.am : d.ae;
-      const got = list.filter((a, i) => (cnt[i] || 0) >= a.n).length, all = got === list.length;
-      n++; if (all) done++;
-      add(10, item('zikr', 'azkar', (which === 'morning' ? 'Утренние' : 'Вечерние') + ' азкары', (which === 'morning' ? 'После Фаджра' : 'После Асра, до Магриба') + (all ? ' · прочитаны' : ''), all ? ck(true) : meter(got + ' из ' + list.length, got / list.length)));
-      if (isToday && isNightNow()) {
-        const sd = getDay(sleepKey()), P = slProgress(sd);
-        n++; if (P.all) done++;
-        add(9, item('sleepAz', '', 'Азкары перед сном', P.all ? 'Прочитаны · спокойной ночи' : (slMin() ? 'Минимум: ' : '') + 'Аят аль-Курси, три суры, 33 · 33 · 34…', P.all ? ck(true) : meter(P.done + ' из ' + P.total, P.total ? P.done / P.total : 0)));
-      }
+    const applies = (id) => PIX[id] && piApplies(PIX[id], k, d);
+    const check = (pr, key, t, m) => { if (!applies(key)) return; const on = !!d.s[key]; add(key, pr, item('sunna', key, t, sub(key, m), ck(on), ' aria-pressed="' + on + '"')); };
+    // азкары утра и вечера
+    [['am', 'morning', 'Утренние азкары', 'После Фаджра', 10], ['ae', 'evening', 'Вечерние азкары', 'После Асра, до Магриба', 12]].forEach((x) => {
+      const list = D.AZKAR[x[1]], cnt = x[1] === 'morning' ? d.am : d.ae, got = list.filter((a, i) => (cnt[i] || 0) >= a.n).length, all = got === list.length;
+      if (!dp.inPlan[x[0]] && !all && azByTime() !== x[1]) return; // вне плана показываем только своё время
+      add(x[0], x[4], '<button class="li" data-a="zikr" data-v="azkar:' + x[1] + '"><span class="li-c"><span class="li-t">' + x[2] + '</span><span class="li-m">' + sub(x[0], x[3] + (all ? ' · прочитаны' : '')) + '</span></span>' + (all ? ck(true) : meter(got + ' из ' + list.length, got / list.length)) + '</button>');
+    });
+    if (dp.inPlan.sl || (isToday && isNightNow())) {
+      const sd = getDay(isToday ? sleepKey() : k), P = slProgress(sd);
+      add('sl', night ? 9 : 70, item('sleepAz', '', 'Азкары перед сном', sub('sl', P.all ? 'Прочитаны · спокойной ночи' : (slMin() ? 'Минимум: ' : '') + 'Аят аль-Курси, три суры, 33 · 33 · 34'), P.all ? ck(true) : meter(P.done + ' из ' + P.total, P.total ? P.done / P.total : 0)));
     }
+    // чтение Корана: план чтения, если он есть, иначе — переход к Корану
     const st = isToday ? rState() : null;
     if (st && !st.done) {
       const R = st.R, day = tfToday(st), ok = !st.before && st.left === 0;
@@ -767,55 +909,76 @@
       if (st.before) m = 'Начало ' + fmtDate(R.start) + ' · ' + st.base + ' стр. в день';
       else if (ok) m = 'Норма выполнена · можно читать дальше';
       else m = (day && day.to >= 0 ? ayRange(day.from, day.to) + ' · около ' + readMins(day.from, day.to) + ' мин' : rRange(R, st.pos + 1, st.posStart + st.norm));
-      n++; if (ok) done++;
-      add(20, item(isSaadi(R) && !st.before ? 'readOpen' : 'sheet', isSaadi(R) && !st.before ? '' : 'read', esc(R.title), m, ok ? ck(true) : st.before ? '<span class="li-v"><b class="num">' + st.base + ' стр.</b></span>' : meter(st.readToday + ' из ' + st.norm + ' стр.', st.readToday / Math.max(1, st.norm))));
-    }
-    if (isToday) { const qd = qgTodayItems(add, item, ck, meter); n += qd[0]; done += qd[1]; }
+      add('quran', 20, item(isSaadi(R) && !st.before ? 'readOpen' : 'sheet', isSaadi(R) && !st.before ? '' : 'read', esc(R.title), sub('quran', m), ok ? ck(true) : st.before ? '<span class="li-v"><b class="num">' + st.base + ' стр.</b></span>' : meter(st.readToday + ' из ' + st.norm + ' стр.', st.readToday / Math.max(1, st.norm))));
+    } else if (dp.inPlan.quran) add('quran', 20, item('tab', 'quran', 'Чтение Корана', sub('quran', 'Хотя бы страница по плану чтения'), ck(readOn(k))));
+    const goals = []; if (isToday) qgTodayItems((pr, html) => goals.push({ id: '', pr, i: goals.length, html }), item, ck, meter);
     check(30, 'kahf', 'Сура аль-Кахф', 'Сунна пятницы');
     check(31, 'ghusl', 'Гусль', 'Перед пятничным намазом');
     check(morning ? 25 : 40, 'duha', 'Духа-намаз', 'После восхода, до Зухра');
-    check(night ? 22 : 50, 'witr', 'Витр-намаз', 'После Иша, до рассвета');
-    [['qiyam', 'Киям аль-лейль', 'ракаатов', 2, 20], ['wudu', 'Дуа после омовения', 'раз', 1, 10]].forEach((x) => {
-      const goal = plan[x[0]]; if (!(goal > 0)) return;
-      const v = x[0] === 'qiyam' ? d.q : d.w, ok = v >= goal; n++; if (ok) done++;
-      add(x[0] === 'qiyam' ? (night ? 23 : 55) : 65, '<div class="li"><span class="li-c"><span class="li-t">' + x[1] + '</span><span class="li-m num' + (ok ? ' ok' : '') + '">' + v + ' из ' + goal + ' ' + x[2] + '</span></span><span class="stp"><button class="stp-b" data-a="step" data-v="' + x[0] + ':-' + x[3] + ':' + x[4] + '" aria-label="' + x[1] + ': убавить">' + I.minus + '</button><b class="num">' + v + '</b><button class="stp-b plus" data-a="step" data-v="' + x[0] + ':' + x[3] + ':' + x[4] + '" aria-label="' + x[1] + ': добавить">' + I.plus + '</button></span></div>');
+    check(night ? 22 : 50, 'witr', 'Витр-намаз', 'После Иши, до рассвета');
+    [['qiyam', 'Тахаджуд', 'ракаатов', 2, 20, 2], ['wudu', 'Дуа после омовения', 'раз', 1, 10, 1]].forEach((x) => {
+      if (!applies(x[0])) return;
+      const v = x[0] === 'qiyam' ? d.q : d.w, goal = x[5], ok = v >= goal;
+      if (!dp.inPlan[x[0]] && x[0] === 'wudu' && !v) return; // дуа после омовения вне плана — только если уже отмечали
+      add(x[0], x[0] === 'qiyam' ? (night ? 23 : 55) : 65, '<div class="li"><span class="li-c"><span class="li-t">' + x[1] + '</span><span class="li-m num' + (ok ? ' ok' : '') + '">' + sub(x[0], v + ' ' + x[2] + (dp.inPlan[x[0]] ? ' · цель ' + goal : '')) + '</span></span><span class="stp"><button class="stp-b" data-a="step" data-v="' + x[0] + ':-' + x[3] + ':' + x[4] + '" aria-label="' + x[1] + ': убавить">' + I.minus + '</button><b class="num">' + v + '</b><button class="stp-b plus" data-a="step" data-v="' + x[0] + ':' + x[3] + ':' + x[4] + '" aria-label="' + x[1] + ': добавить">' + I.plus + '</button></span></div>');
     });
     check(60, 'sadaqa', 'Садака', 'Любое доброе пожертвование');
-    if (lvl === 'ihsan') {
-      const fi = fastingInfo(k);
-      if ((fi && fi.kind !== 'forbidden') || d.p) {
-        const lab = { fast: 'Постился', qada: 'Каза поста', missed: 'Пост пропущен' }[d.p];
-        const on = d.p === 'fast' || d.p === 'qada';
-        add(15, item('sheet', 'fast', 'Пост', lab ? lab + (fi ? ' · ' + fi.text.toLowerCase() : '') : fi.text + (fi.kind === 'rec' ? ' · желательный пост' : ''), d.p === 'missed' ? '<span class="ck2 st-missed">' + I.st.missed + '</span>' : ck(on)));
-      }
+    const fi = fastingInfo(k);
+    if ((fi && fi.kind !== 'forbidden' && (lvl === 'ihsan' || dp.inPlan.fast || fi.kind === 'ramadan')) || d.p) {
+      const lab = { fast: 'Постился', qada: 'Каза поста', missed: 'Пост пропущен' }[d.p], on = d.p === 'fast' || d.p === 'qada';
+      add(fi && fi.kind === 'rec' ? 'fast' : '', 15, item('sheet', 'fast', 'Пост', sub(fi && fi.kind === 'rec' ? 'fast' : '', lab ? lab + (fi ? ' · ' + fi.text.toLowerCase() : '') : fi.text + (fi.kind === 'rec' ? ' · желательный пост' : '')), d.p === 'missed' ? '<span class="ck2 st-missed">' + I.st.missed + '</span>' : ck(on)));
     }
-    if (lvl !== 'start') {
-      const z = d.z || [], total = z.reduce((a, b) => a + (b || 0), 0);
-      const frac = D.ZIKRS.reduce((a, x, i) => a + Math.min(z[i] || 0, 100), 0) / (D.ZIKRS.length * 100);
-      add(35, item('zikr', 'tasbih', 'Зикры', 'Тасбих · по 100 каждого', meter(total + ' ' + plural(total, 'зикр', 'зикра', 'зикров'), frac)));
+    if (lvl !== 'start' || dp.inPlan.zikr) {
+      const z = d.z || [], total = zTotal(d);
+      add('zikr', 35, item('zikr', 'tasbih', 'Зикры', sub('zikr', dp.inPlan.zikr ? 'Цель — 100 за день' : 'Тасбих'), meter(total + ' ' + plural(total, 'зикр', 'зикра', 'зикров'), dp.inPlan.zikr ? total / 100 : D.ZIKRS.reduce((a, x, i) => a + Math.min(z[i] || 0, 100), 0) / (D.ZIKRS.length * 100))));
     }
-    if (lvl === 'ihsan') {
-      const DT = { n: ['Обычный', 'var(--emerald)', 'Нажмите, если вы в пути или болеете'], t: ['В пути', 'var(--blue)', 'Сунна, кроме главной, не снижает итог'], s: ['Болезнь', 'var(--violet-text)', 'Учитываются фард, азкары и зикры'] }[d.t] || ['Обычный', 'var(--emerald)', ''];
-      add(90, item('cycleDay', '', 'Тип дня', DT[2], '<span class="li-tag"><span class="dot" style="background:' + DT[1] + '"></span>' + DT[0] + '</span>', ' aria-label="Тип дня: ' + DT[0] + '. Нажмите, чтобы сменить"'));
+    const sort = (a, b) => a.pr - b.pr || a.i - b.i;
+    const planRows = rows.filter((r) => dp.inPlan[r.id]).sort(sort), extraRows = rows.filter((r) => !dp.inPlan[r.id]).sort(sort);
+    // при намазах: сунна и азкары из плана отмечаются в листе каждого намаза — здесь только сводка
+    const atPr = dp.items.filter((x) => x.pr), atPrDone = atPr.filter((x) => x.ok(d, k)).length;
+    const out = [];
+    const modeName = { n: 'Обычный день', m: 'Минимальный день', t: 'В пути', s: 'Болезнь' }[dp.mode] || 'Обычный день';
+    const nPlan = dp.items.length;
+    let planHtml = '';
+    if (atPr.length) planHtml += '<div class="li"><span class="li-c"><span class="li-t">При намазах</span><span class="li-m">Сунна, азкары и джамаат — отмечаются в каждом намазе</span></span>' + meter(atPrDone + ' из ' + atPr.length, atPrDone / atPr.length) + '</div>';
+    planHtml += planRows.map((r) => r.html).join('') + goals.sort(sort).map((r) => r.html).join('');
+    if (!nPlan) planHtml += item('sheet', 'plan', dp.mode === 'n' ? 'В плане пока только фарды' : 'Сегодня в плане только фарды', dp.mode === 'n' ? 'Добавьте то, что уже делаете постоянно' : 'Остальное сегодня — сверх плана', '<span class="li-chev">' + I.chev + '</span>');
+    planHtml += item('sheet', 'dayMode', 'Режим дня', dp.mode === 'm' ? 'В плане только то, что вы не оставляете никогда' : dp.mode === 't' ? 'Облегчённый план в пути' : dp.mode === 's' ? 'Только фарды, насколько получается' : 'Нажмите, если день тяжёлый, вы в пути или болеете', '<span class="li-tag">' + modeName + '</span>', ' aria-label="Режим дня: ' + modeName + '. Сменить"');
+    out.push('<section class="sec" aria-label="Мой план"><div class="sec-h"><h2 class="h2">Мой план</h2><button class="sec-link" data-a="sheet" data-v="plan">' + (5 + nPlan) + ' ' + plural(5 + nPlan, 'пункт', 'пункта', 'пунктов') + ' · изменить</button></div><div class="card list">' + planHtml + '</div></section>');
+    if (extraRows.length || dp.ex) {
+      const LIM = 4, open = S.set.todayAll || extraRows.length <= LIM + 1;
+      const shown = (open ? extraRows : extraRows.slice(0, LIM)).map((r) => r.html);
+      if (extraRows.length > LIM + 1) shown.push('<button class="li li-more" data-a="todayAll" aria-expanded="' + open + '"><span class="li-c"><span class="li-t">' + (open ? 'Свернуть' : 'Ещё ' + (extraRows.length - LIM) + ' ' + plural(extraRows.length - LIM, 'дело', 'дела', 'дел')) + '</span></span><span class="li-chev' + (open ? ' up' : '') + '">' + I.down + '</span></button>');
+      const per = Math.round(100 / dp.n);
+      const meta = dp.ex ? (dp.complete ? '+' + Math.round(dp.ex * 100 / dp.n) + '%' : dp.ex + ' ' + plural(dp.ex, 'дело', 'дела', 'дел') + ' отдельно') : '';
+      const foot = dp.missed ? 'Дела сверх плана не покрывают пропущенный фард, поэтому сегодня они показаны отдельно.' : dp.complete ? 'Каждое дело сверх плана добавляет ' + per + '% к дню.' : 'Засчитаются сверх 100%, когда план дня выполнен.';
+      out.push('<section class="sec" aria-label="Сверх плана"><div class="sec-h"><h2 class="h2">Сверх плана</h2>' + (meta ? '<span class="sec-m num">' + meta + '</span>' : '') + '</div><div class="card list">' + shown.join('') + '</div><p class="sec-foot">' + foot + '</p></section>');
     }
-    if (!rows.length) return '';
-    rows.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-    const html = rows.map((r) => r[2]);
-    const LIM = 5, open = S.set.todayAll || rows.length <= LIM + 1;
-    const shown = open ? html : html.slice(0, LIM);
-    if (rows.length > LIM + 1) shown.push('<button class="li li-more" data-a="todayAll" aria-expanded="' + open + '"><span class="li-c"><span class="li-t">' + (open ? 'Свернуть' : 'Ещё ' + (rows.length - LIM) + ' ' + plural(rows.length - LIM, 'пункт', 'пункта', 'пунктов')) + '</span></span><span class="li-chev' + (open ? ' up' : '') + '">' + I.down + '</span></button>');
-    return '<section class="sec" aria-label="Сегодня ещё"><div class="sec-h"><h2 class="h2">' + (isToday ? 'Сегодня ещё' : 'В этот день') + '</h2>' + (n ? '<span class="sec-m num">' + done + ' из ' + n + '</span>' : '') + '</div><div class="card list">' + shown.join('') + '</div></section>';
+    return out.join('');
   }
 
+  // возвращение после тяжёлых дней и предложение внести постоянное дело в план
+  function vPlanCards(k) {
+    if (returnDue()) return '<section class="card pc-card" aria-label="С возвращением"><span class="pc-eb">С возвращением</span><span class="pc-t">Вернуться важнее, чем не оступаться</span><span class="pc-m">Последние дни были тяжёлыми. Сегодня можно начать с минимального дня, а свой план вернуть, когда станет легче.</span>' +
+      '<span class="pc-q">' + STEADY_HADITH[0] + ' · ' + STEADY_HADITH[1] + '</span><div class="pc-act"><button class="btn gold" data-a="dayMode" data-v="m">Минимальный день</button><button class="btn ghost" data-a="retKeep">Мой план</button></div></section>';
+    const sg = planSuggestion();
+    if (sg) {
+      const n = 5 + planNow().length + 1;
+      return '<section class="card pc-card" aria-label="Предложение"><span class="pc-eb">Дело стало постоянным</span><span class="pc-t">' + esc(sg.x.t) + ' — ' + sg.ok + ' из ' + sg.ap + ' дней</span><span class="pc-m">Две недели вы делаете это сверх плана. Внести в план? Тогда 100% — это ' + n + ' ' + plural(n, 'пункт', 'пункта', 'пунктов') + '. Решаете вы.</span>' +
+        (sg.x.h ? '<span class="pc-q">' + sg.x.h + ' · ' + sg.x.src + '</span>' : '') + '<div class="pc-act"><button class="btn gold" data-a="sugAdd" data-v="' + sg.x.id + '">Внести в план</button><button class="btn ghost" data-a="sugLater">Не сейчас</button></div></section>';
+    }
+    return '';
+  }
   function vHome() {
     const k = viewKey(), today = todayKey(), isToday = k === today, d = getDay(k), lvl = S.set.level;
     const sc = scores(k), T = prayerTimes(k), sk = isToday ? skyState() : null, plan = planFor(k);
-    const parts = [], p = parseKey(k), v = sc ? Math.min(sc.overall, 1) : 0;
+    const parts = [], p = parseKey(k), v = sc ? sc.overall : 0, dpH = dayPlan(k);
     const note = dayNote(k);
     parts.push('<header class="td-top"><div class="col"><span class="td-date">' + WD_FULL[weekday(k)] + ', ' + fmtDate(k) + (isToday ? '' : ' ' + p.y) + (S.set.city ? ' · ' + esc(S.set.city) : '') + '</span><span class="td-hijri">' + hijriText(k) + '</span>' + (note ? '<span class="dnote">' + I.spark + esc(note) + '</span>' : '') + '</div>' +
-      '<button class="td-ring" data-a="tab" data-v="progress" aria-label="Итог дня: ' + Math.round(v * 100) + '%. Открыть прогресс">' + ring(v, 48, 20, 4.5) + '<span class="num">' + Math.round(v * 100) + '%</span></button></header>');
+      '<button class="td-ring' + (v > 1 ? ' over' : '') + '" data-a="tab" data-v="progress" aria-label="' + (dpH.mode === 'm' ? 'Минимальный день' : 'План дня') + ': ' + pctText(v) + ', ' + dpH.done + ' из ' + dpH.n + '. Открыть прогресс">' + ring2(v, 48, 20, 4.5) + '<span class="num">' + pctText(v) + '</span></button></header>');
     if (!isToday) parts.push('<button class="card back-day" data-a="backToday"><span class="li-c"><span class="li-t">Вы отмечаете ' + fmtDate(k) + '</span><span class="li-m">Нажмите, чтобы вернуться к сегодняшнему дню</span></span>' + I.chev + '</button>');
     if (isToday) parts.push(vHero2(k, d));
+    if (isToday) parts.push(vPlanCards(k));
     const detailed = S.set.detailed && lvl !== 'start';
     parts.push('<section class="sec" aria-label="Намазы"><div class="sec-h"><h2 class="h2">Намазы</h2><span class="sec-m num">' + fardDoneCount(d) + ' из 5</span></div><div class="card list">' + PRAYERS.map((pr) => prRow(k, pr, d, T, sk, detailed, plan)).join('') + '</div></section>');
     parts.push(vTodayMore(k, d, plan, lvl, isToday));
@@ -1388,6 +1551,17 @@
     }).join('')).join('');
     return '<div class="pg" role="img" aria-label="Сетка намазов по дням недели">' + head + rows + '</div>';
   }
+  // возвращение — день с выполненным планом после дня, когда план не дотянул и до половины (сам первый день учёта не в счёт)
+  function returnsCount(days) {
+    const t = todayKey(), first = firstMark(); let n = 0;
+    for (let i = 0; i < days; i++) {
+      const k = addDays(t, -i), y = addDays(k, -1);
+      if (!first || y < first) break;
+      const s = scores(k), sy = scores(y);
+      if (s && s.plan.complete && (!sy || sy.overall < 0.5)) n++;
+    }
+    return n;
+  }
   function vProgress() {
     const P = S.prog, today = todayKey(), lvl = S.set.level;
     if (P.period === 'path' && !gamOn()) P.period = 'week';
@@ -1417,7 +1591,7 @@
     }
     if (S.read && S.read.log) { const pg = keys.reduce((a, k) => a + (S.read.log[k] || 0), 0); kpi.push([S.read.book === 'saadi' ? 'Тафсир' : 'Чтение', pg + ' стр.', 'var(--gold)']); }
     else if (lvl !== 'start') { const sn = avgOf(past, (x) => x.sunna); kpi.push(['Сунна', pct(sn), 'var(--gold)']); }
-    out.push('<section class="card pr-sum" aria-label="Итог недели"><span class="pr-ring">' + ring(avg || 0, 104, 45, 9) + '<span><b class="num">' + (avg === null ? '—' : Math.round(avg * 100) + '%') + '</b><small>неделя</small></span></span>' +
+    out.push('<section class="card pr-sum" aria-label="Итог недели"><span class="pr-ring">' + ring2(avg || 0, 104, 45, 9) + '<span><b class="num">' + (avg === null ? '—' : Math.round(avg * 100) + '%') + '</b><small>неделя</small></span></span>' +
       '<span class="col grow" style="gap:9px"><span class="li-m">' + cmp + '</span>' + kpi.map((x) => '<span class="pr-kpi"><i style="background:' + x[2] + '"></i><span class="grow">' + x[0] + '</span><b class="num">' + x[1] + '</b></span>').join('') + '</span></section>');
     // сетка намазов
     const cnt = { mosque: 0, jamaat: 0, done: 0, qada: 0, missed: 0 };
@@ -1429,13 +1603,15 @@
     if (gamOn() && S.loaded) out.push(vGoalCard(false));
     // постоянство
     const last7 = [6, 5, 4, 3, 2, 1, 0].map((i) => addDays(today, -i));
-    const st = [[(d) => PRAYERS.every((p) => ON_TIME[d.f[p.id]]), 'Все фарды вовремя']];
+    // v2.4: вместо серий — «N из 7 дней»; первая строка — выполненный план, внизу — возвращения после спада
+    const st = [[(d, k) => { const s = scores(k); return !!s && s.plan.complete; }, 'План дня выполнен'], [(d) => PRAYERS.every((p) => ON_TIME[d.f[p.id]]), 'Все фарды вовремя']];
     if (lvl !== 'start') st.push([(d) => azDone(d, 'morning'), 'Утренние азкары'], [(d) => azDone(d, 'evening'), 'Вечерние азкары'], [(d) => slProgress(d).all, 'Азкары перед сном']);
     st.push([(d) => PRAYERS.some((p) => d.f[p.id] === 'mosque' || d.f[p.id] === 'juma'), 'Хотя бы один намаз в мечети']);
+    const ret = returnsCount(30);
     out.push('<section class="sec" aria-label="Постоянство"><div class="sec-h"><h2 class="h2">Постоянство</h2><span class="sec-m">последние 7 дней</span></div><div class="card list">' + st.map((x) => {
-      const n = streak(x[0]);
-      return '<div class="li"><span class="pr-st"><b class="num">' + n + '</b><small>' + plural(n, 'день', 'дня', 'дней') + '</small></span><span class="li-c" style="gap:7px"><span class="li-t">' + x[1] + '</span><span class="pr-dots">' + last7.map((k) => '<i class="' + (S.days[k] && x[0](S.days[k]) ? 'on' : '') + '"></i>').join('') + '</span></span></div>';
-    }).join('') + '</div></section>');
+      const n = last7.filter((k) => S.days[k] && x[0](S.days[k], k)).length;
+      return '<div class="li"><span class="pr-st"><b class="num">' + n + '</b><small>из 7</small></span><span class="li-c" style="gap:7px"><span class="li-t">' + x[1] + '</span><span class="pr-dots">' + last7.map((k) => '<i class="' + (S.days[k] && x[0](S.days[k], k) ? 'on' : '') + '"></i>').join('') + '</span></span></div>';
+    }).join('') + (ret ? '<div class="li"><span class="pr-st"><b class="num">' + ret + '</b><small>' + plural(ret, 'раз', 'раза', 'раз') + '</small></span><span class="li-c"><span class="li-t">Возвращения</span><span class="li-m">За 30 дней вы ' + ret + ' ' + plural(ret, 'раз', 'раза', 'раз') + ' вернулись к плану после спада</span></span></div>' : '') + '</div><p class="sec-foot">' + STEADY_HADITH[0] + ' (' + STEADY_HADITH[1] + ').</p></section>');
     // план чтения
     const rs = rState();
     if (rs) {
@@ -1463,7 +1639,7 @@
     const lead = (weekday(keys[0]) + 6) % 7;
     let cells = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'].map((w) => '<span class="cal-w">' + w + '</span>').join('');
     for (let i = 0; i < lead; i++) cells += '<span></span>';
-    keys.forEach((k) => { const s = scores(k), v = s ? s.overall : null; const cls = k > today ? 'fu' : v === null ? 'h0' : v >= 0.9 ? 'h4c' : v >= 0.75 ? 'h3c' : v >= 0.6 ? 'h2c' : 'h1c'; cells += '<button class="' + cls + (k === selKey ? ' on' : '') + ' num" data-a="calDay" data-v="' + k + '" aria-label="' + fmtDate(k) + ': ' + (k > today ? 'ещё впереди' : pct(v)) + '"' + (k === today ? ' style="font-weight:800"' : '') + '>' + parseKey(k).d + '</button>'; });
+    keys.forEach((k) => { const s = scores(k), v = s ? s.overall : null; const cls = k > today ? 'fu' : v === null ? 'h0' : v > 1.001 ? 'h4c hov' : v >= 0.9 ? 'h4c' : v >= 0.75 ? 'h3c' : v >= 0.6 ? 'h2c' : 'h1c'; cells += '<button class="' + cls + (k === selKey ? ' on' : '') + ' num" data-a="calDay" data-v="' + k + '" aria-label="' + fmtDate(k) + ': ' + (k > today ? 'ещё впереди' : pct(v)) + '"' + (k === today ? ' style="font-weight:800"' : '') + '>' + parseKey(k).d + '</button>'; });
     out.push('<section class="card pad pr-month" aria-label="Месяц"><div class="between" style="align-items:flex-end"><span class="col" style="gap:4px"><span class="li-m">Средний итог · ' + MONTHS_NOM[parseKey(today).m - 1] + '</span><b class="pr-big num" style="font-size:44px">' + (avg === null ? '—' : Math.round(avg * 100) + '%') + '</b></span>' +
       '<span class="col" style="align-items:flex-end;gap:6px"><span class="li-t" style="font-size:13.5px">' + WD_SHORT[weekday(selKey)] + ', ' + fmtDate(selKey) + ' · ' + (selKey > today ? 'впереди' : pct(selSc ? selSc.overall : null)) + '</span>' + (selKey <= today && selKey !== today ? '<button class="btn ghost sm" data-a="openDay" data-v="' + selKey + '" style="min-height:34px">Открыть день</button>' : '') + '</span></div>' +
       '<div class="cal">' + cells + '</div><div class="pg-leg">' + [['h1c', 'ниже 60%'], ['h2c', '60–74%'], ['h3c', '75–89%'], ['h4c', '90%+']].map((l) => '<span><i class="' + l[0] + '"></i>' + l[1] + '</span>').join('') + '</div></section>');
@@ -2428,7 +2604,8 @@
         ['madhab', 'Время Асра', S.set.madhab === 'Hanafi' ? 'Ханафитское' : 'Стандартное'],
         ['times', 'Поправки и икама', tadjTxt]]],
       ['Учёт', [
-        ['level', 'Мой уровень', lvlName],
+        ['plan', 'Мой план', (5 + planNow().length) + ' ' + plural(5 + planNow().length, 'пункт', 'пункта', 'пунктов') + ' = 100%'],
+        ['level', 'Подробность', lvlName],
         ['mode', 'Отметка намазов', S.set.level === 'start' ? 'Просто' : S.set.detailed !== false ? 'Подробно' : 'Просто'],
         ['read', 'План чтения', S.read ? S.read.title : 'Нет'],
         ['gam', 'Путь и знаки', gamOn() ? 'Включены' : 'Выключены'],
@@ -2507,18 +2684,47 @@
       body = QG_SHEETS[sh.type](sh, head, opt);
     } else if (sh.type === 'status') {
       const k = viewKey(), pr = PRAYERS.find((p) => p.id === sh.id), cur = getDay(k).f[sh.id], T = prayerTimes(k);
-      const opts = [['mosque', 'В мечети', 'С имамом, джамаатом', '150%'], ['jamaat', 'Джамаатом', 'Вместе с другими: дома, на работе, в пути', '120%']];
-      if (sh.id === 'dhuhr' && isFriday(k)) opts.unshift(['juma', 'Джума', 'Пятничный намаз с имамом', '150%']);
-      opts.push(['done', 'Совершил', 'Без джамаата, в отведённое время', '100%'], ['qada', 'Восполнил (каза)', 'После окончания времени', '50%'], ['missed', 'Пропустил', 'Добавится в план восполнения', '0%']);
+      // джамаат вне плана — дело сверх плана (v2.4); проценты у статусов убраны: все пункты плана равны
+      const jmIn = !!dayPlan(k).inPlan['jm_' + sh.id], jmTag = jmIn ? '' : '+1 сверх плана', jmCls = 'st-plus';
+      const opts = [['mosque', 'В мечети', 'С имамом, джамаатом', jmTag], ['jamaat', 'Джамаатом', 'Вместе с другими: дома, на работе, в пути', jmTag]];
+      if (sh.id === 'dhuhr' && isFriday(k)) opts.unshift(['juma', 'Джума', 'Пятничный намаз с имамом', jmTag]);
+      opts.push(['done', 'Совершил', 'Без джамаата, в отведённое время', ''], ['qada', 'Восполнил (каза)', 'После окончания времени', ''], ['missed', 'Пропустил', 'Добавится в план восполнения', '']);
       // сунна при этом намазе — здесь же, а не чипами на главном экране
-      const d = getDay(k), subs = prayerSunna(sh.id, k), first = !!cur && cur !== 'missed' && subs.length > 0;
-      const subsHtml = subs.length ? '<div class="sh-sec">' + (first ? 'Сунна при намазе — отметьте, что совершили' : 'Сунна при намазе') + '</div><div class="card list">' + subs.map((x) => { const on = !!d.s[x[0]], L = SUNNA_FULL[x[0]] || [x[1], '']; return '<button class="li" data-a="sunna" data-v="' + x[0] + '" aria-pressed="' + on + '"><span class="li-c"><span class="li-t">' + L[0] + '</span>' + (L[1] ? '<span class="li-m">' + L[1] + '</span>' : '') + '</span><span class="ck2' + (on ? ' st-done' : '') + '">' + (on ? I.st.done : '') + '</span></button>'; }).join('') + '</div>' : '';
+      const d = getDay(k), subs = prayerSunna(sh.id, k), first = !!cur && cur !== 'missed' && subs.some((x) => x[2]);
+      const subsHtml = subs.length ? '<div class="sh-sec">' + (first ? 'Сунна при намазе — отметьте, что совершили' : 'Сунна при намазе') + '</div><div class="card list">' + subs.map((x) => { const on = !!d.s[x[0]], L = SUNNA_FULL[x[0]] || [x[1], '']; return '<button class="li" data-a="sunna" data-v="' + x[0] + '" aria-pressed="' + on + '"><span class="li-c"><span class="li-t">' + L[0] + '</span>' + '<span class="li-m">' + [L[1], x[2] ? '' : 'сверх плана'].filter(Boolean).join(' · ') + '</span></span><span class="ck2' + (on ? ' st-done' : '') + '">' + (on ? I.st.done : '') + '</span></button>'; }).join('') + '</div>' : '';
       const title = sh.id === 'dhuhr' && isFriday(k) ? 'Зухр / Джума' : pr.name, curName = cur && (opts.find((o) => o[0] === cur) || [])[1];
-      const optsHtml = opts.map((o) => opt('setStatus', sh.id + ':' + o[0], cur === o[0], o[1], o[2], o[3], 'st-' + o[0])).join('') + '<p class="small sub st-note">Проценты — вес в итоге дня, а не мера награды: награду знает только Аллах.</p>';
+      const optsHtml = opts.map((o) => opt('setStatus', sh.id + ':' + o[0], cur === o[0], o[1], o[2], o[3], jmCls)).join('') + (jmIn ? '' : '<p class="small sub st-note">' + (sh.id === 'fajr' || sh.id === 'isha' ? PIX['jm_' + sh.id].h + ' (' + PIX['jm_' + sh.id].src + ')' : PG[0][2] + ' (' + PG[0][3] + ')') + '. Награду знает только Аллах.</p>');
       // уже отмечен и есть сунна: сунна наверху, под ней «Готово», статус можно изменить ниже
       body = first
         ? head(title, timeLine(k, pr, T) + ' · отмечено: ' + curName) + subsHtml + '<button class="btn gold block st-done-btn" data-a="closeSheet">Готово</button><div class="sh-sec">Изменить статус</div>' + optsHtml + '<button class="btn block quiet" data-a="setStatus" data-v="' + sh.id + ':">Снять отметку</button>'
         : head(title, timeLine(k, pr, T) + ' · как вы совершили?') + optsHtml + subsHtml + (cur ? '<button class="btn block quiet" data-a="setStatus" data-v="' + sh.id + ':">Снять отметку</button>' : '');
+    } else if (sh.type === 'plan') {
+      // Мой план (v2.4): пять фардов всегда, остальное — то, что вы уже делаете постоянно; у каждого дела — хадис
+      const cur = planNow(), n = 5 + cur.length;
+      const row = (x) => { const on = cur.indexOf(x.id) >= 0; return '<button class="li pl-row" role="switch" aria-checked="' + on + '" data-a="planTog" data-v="' + x.id + '"><span class="li-c"><span class="li-t">' + x.t + '</span>' + (x.m ? '<span class="li-m">' + x.m + '</span>' : '') + (x.h ? '<span class="pl-h">' + x.h + ' <b>' + x.src + '</b></span>' : '') + '</span><span class="switch" aria-checked="' + on + '"><i></i></span></button>'; };
+      body = head('Мой план', n + ' ' + plural(n, 'пункт', 'пункта', 'пунктов') + ' = 100% · всё сверх — перевыполнение') +
+        (sh.intro ? '<div class="pl-intro"><b>Теперь у вас личный план.</b> Его выполнение — это 100%. Набор собран по вашему уровню: оставьте только то, что уже делаете постоянно. Остальное будет сверх плана.</div>' : '') +
+        '<div class="sh-sec">Обязательное</div><div class="card list"><div class="li"><span class="li-c"><span class="li-t">Пять фардов</span><span class="li-m">Есть в любом плане, их нельзя убрать</span><span class="pl-h">' + FARD_HADITH[0] + ' <b>' + FARD_HADITH[1] + '</b></span></span><span class="li-tag">всегда</span></div></div>' +
+        PG.map((g) => { const xs = PI.filter((x) => x.g === g[0]); return '<div class="sh-sec">' + g[1] + '</div>' + (g[2] ? '<p class="pl-gh">' + g[2] + ' <b>' + g[3] + '</b></p>' : '') + '<div class="card list">' + xs.map(row).join('') + '</div>'; }).join('') +
+        '<div class="sh-sec">Минимальный день</div><div class="card list">' + '<button class="li" data-a="sheet" data-v="planMin"><span class="li-c"><span class="li-t">То, что вы не оставляете никогда</span><span class="li-m">' + (planMin().length ? '5 фардов и ещё ' + planMin().length : 'Сейчас — 5 фардов') + '</span></span><span class="li-chev">' + I.chev + '</span></button></div>' +
+        '<div class="sh-sec">Быстрый набор</div><div class="pl-presets">' + [['start', 'Начало'], ['effort', 'Усердие'], ['ihsan', 'Ихсан']].map((x) => '<button class="btn ghost" data-a="planPreset" data-v="' + x[0] + '">' + x[1] + '</button>').join('') + '</div>' +
+        '<p class="small sub pl-foot">' + STEADY_HADITH[0] + ' (' + STEADY_HADITH[1] + '). Добавляйте по одному делу. План можно снизить в любой момент — без чувства провала. Изменения действуют с сегодняшнего дня.</p>' +
+        '<button class="btn gold block" data-a="closeSheet">Готово</button>';
+    } else if (sh.type === 'planMin') {
+      const cur = planNow().map((id) => PIX[id]), mn = planMin();
+      body = head('Минимальный день', 'То, что вы не оставляете никогда. В тяжёлый день план сожмётся до этого') +
+        '<div class="card list"><div class="li"><span class="li-c"><span class="li-t">Пять фардов</span></span><span class="li-tag">всегда</span></div>' +
+        cur.map((x) => { const on = mn.indexOf(x.id) >= 0; return '<button class="li" data-a="minTog" data-v="' + x.id + '" aria-pressed="' + on + '"><span class="li-c"><span class="li-t">' + x.t + '</span></span><span class="ck2' + (on ? ' st-done' : '') + '">' + (on ? I.st.done : '') + '</span></button>'; }).join('') + '</div>' +
+        (cur.length ? '' : '<p class="small sub pl-foot">В плане пока только фарды — они и есть минимальный день.</p>') +
+        '<button class="btn gold block" data-a="sheet" data-v="plan">Готово</button>';
+    } else if (sh.type === 'dayMode') {
+      const k = viewKey(), d = getDay(k), m = d.mn ? 'm' : d.t || 'n', nMin = 5 + planMin().length, nPlan = 5 + planNow().length;
+      body = head('Режим дня', fmtDate(k) + ' · действует только на этот день') +
+        opt('dayMode', 'n', m === 'n', 'Обычный', 'Мой план — ' + nPlan + ' ' + plural(nPlan, 'пункт', 'пункта', 'пунктов')) +
+        opt('dayMode', 'm', m === 'm', 'Минимальный', 'То, что вы не оставляете никогда — ' + nMin + ' ' + plural(nMin, 'пункт', 'пункта', 'пунктов') + '. Остальное — сверх плана') +
+        opt('dayMode', 't', m === 't', 'В пути', 'Без сунны, которую в пути можно оставить') +
+        opt('dayMode', 's', m === 's', 'Болезнь', 'Только фарды, насколько получается') +
+        '<p class="small sub pl-foot">«Аллах не возлагает на душу ничего сверх её возможностей» (Коран, 2:286).</p>';
     } else if (sh.type === 'mode') {
       const det = S.set.detailed !== false;
       body = head('Отметка намазов', 'Как отмечать намазы на экране «Сегодня»') + opt('mode', '1', det, 'Подробно', 'Нажатие на намаз открывает выбор: в мечети, джамаатом, сам, каза — и сунну при нём') + opt('mode', '0', !det, 'Просто', 'Одно нажатие — намаз совершён');
@@ -2583,7 +2789,7 @@
     } else if (sh.type === 'madhab') {
       body = head('Время Асра') + opt('setMadhab', 'Shafi', S.set.madhab !== 'Hanafi', 'Стандартное', 'Шафиитский, маликитский и ханбалитский мазхабы') + opt('setMadhab', 'Hanafi', S.set.madhab === 'Hanafi', 'Ханафитское', 'Аср начинается позже');
     } else if (sh.type === 'level') {
-      body = head('Мой уровень', 'Определяет, что вы отмечаете каждый день') + opt('setLevel', 'start', S.set.level === 'start', 'Начало', 'Только пять намазов, одно касание') + opt('setLevel', 'effort', S.set.level === 'effort', 'Усердие', 'Статусы, сунна, азкары и тасбих') + opt('setLevel', 'ihsan', S.set.level === 'ihsan', 'Ихсан', 'Полный учёт: джамаат, каза, посты, тип дня');
+      body = head('Подробность', 'Сколько всего показывать на экранах. Что входит в 100% — в «Моём плане»') + opt('setLevel', 'start', S.set.level === 'start', 'Начало', 'Только пять намазов, одно касание') + opt('setLevel', 'effort', S.set.level === 'effort', 'Усердие', 'Статусы, сунна, азкары и тасбих') + opt('setLevel', 'ihsan', S.set.level === 'ihsan', 'Ихсан', 'Полный учёт: джамаат, каза, посты, тип дня');
     } else if (sh.type === 'hijri') {
       body = head('Дата хиджры', 'Если начало месяца у вас отличается на день') + [[-1, 'На день раньше'], [0, 'Без сдвига (Умм аль-Кура)'], [1, 'На день позже']].map((x) => opt('setHijri', x[0], (S.set.hijriAdj || 0) === x[0], x[1])).join('');
     } else if (sh.type === 'theme') {
@@ -2702,6 +2908,12 @@
     render();
   }
   let toastTimer = null;
+  // план дня только что выполнен — одно тихое «Альхамдулиллях» (а не после каждой отметки)
+  function planToast(k, was) {
+    if (was || k !== todayKey()) return false;
+    const dp = dayPlan(k); if (!dp.complete) return false;
+    haptic('notify', 'success'); toast('Альхамдулиллях, план дня выполнен'); return true;
+  }
   function toast(msg) { S.toast = msg; render(); clearTimeout(toastTimer); toastTimer = setTimeout(() => { S.toast = ''; render(); }, 2200); }
 
   /* ===== геолокация ===== */
@@ -2827,15 +3039,22 @@
   /* ===== действия ===== */
   const A = {
     onbLevel(v) { S.onbLevel = v; haptic('select'); render(); },
-    onbStart() { S.set.level = S.onbLevel; saveSettings(); haptic('notify', 'success'); render(); $('#scroll').scrollTop = 0; },
+    onbStart() { S.set.level = S.onbLevel; if (!S.set.plan) S.set.plan = { h: [['20000101', packItems(PRESET[S.onbLevel] || [])]], mn: '' }; saveSettings(); haptic('notify', 'success'); render(); $('#scroll').scrollTop = 0; },
     tab(v) { const sub = v.split(':'); v = sub[0]; if (sub[1]) S.prog.period = sub[1]; if (S.tab === v && v === 'quran') S.quran.reader = null; S.tab = v; S.sheet = null; render(); $('#scroll').scrollTop = 0; },
-    zikr(v) { S.zView = v; S.tab = 'zikr'; render(); $('#scroll').scrollTop = 0; },
+    zikr(v) { const p = String(v).split(':'); S.zView = p[0]; if (p[1]) S.azTab = p[1]; S.tab = 'zikr'; render(); $('#scroll').scrollTop = 0; },
+    planTog(id) { const cur = planNow(), on = cur.indexOf(id) >= 0; setPlanItems(on ? cur.filter((x) => x !== id) : cur.concat(id)); haptic('select'); render(); },
+    minTog(id) { const mn = planMin(), on = mn.indexOf(id) >= 0; setPlanMin(on ? mn.filter((x) => x !== id) : mn.concat(id)); haptic('select'); render(); },
+    planPreset(v) { setPlanItems((PRESET[v] || []).slice()); haptic('notify', 'success'); toast('Набор «' + { start: 'Начало', effort: 'Усердие', ihsan: 'Ихсан' }[v] + '» — поправьте под себя'); render(); },
+    dayMode(v) { const k = viewKey(), d = ensureDay(k); if (v === 'm') { d.mn = 1; d.t = 'n'; } else { delete d.mn; d.t = v; } if (k === todayKey()) S.set.retSeen = k; saveDay(k); saveSettings(); S.sheet = null; haptic('select'); render(); },
+    retKeep() { S.set.retSeen = todayKey(); saveSettings(); haptic('select'); render(); },
+    sugAdd(id) { const cur = planNow(); if (cur.indexOf(id) < 0) setPlanItems(cur.concat(id)); S.set.sugNext = addDays(todayKey(), 14); saveSettings(); haptic('notify', 'success'); toast('Внесено в план. Альхамдулиллях'); render(); },
+    sugLater() { S.set.sugNext = addDays(todayKey(), 14); saveSettings(); haptic('select'); render(); },
     cycleDay() { const k = viewKey(), d = ensureDay(k); d.t = { n: 't', t: 's', s: 'n' }[d.t]; saveDay(k); haptic('select'); render(); },
     todayAll() { S.set.todayAll = !S.set.todayAll; saveSettings(); render(); },
     mode(v) { S.set.detailed = v === '1'; saveSettings(); if (S.sheet && S.sheet.type === 'mode') S.sheet = null; haptic('select'); render(); },
-    quick(id) { const k = viewKey(), d = ensureDay(k); if (d.f[id] && d.f[id] !== 'missed') delete d.f[id]; else d.f[id] = (id === 'dhuhr' && isFriday(k) && S.set.level !== 'start') ? 'juma' : 'done'; saveDay(k); const on = !!d.f[id]; haptic(on ? 'notify' : 'impact', on ? 'success' : 'light'); render(); if (on) celebrate(id); },
-    sunna(key) { const k = viewKey(), d = ensureDay(k); if (d.s[key]) delete d.s[key]; else d.s[key] = 1; saveDay(k); haptic('select'); render(); },
-    step(v) { const p = v.split(':'), key = p[0], delta = +p[1], cap = +p[2]; const k = viewKey(), d = ensureDay(k); const f = key === 'qiyam' ? 'q' : 'w'; d[f] = clamp((d[f] || 0) + delta, 0, cap); saveDay(k); haptic('select'); render(); },
+    quick(id) { const k = viewKey(), d = ensureDay(k), was = dayPlan(k).complete; if (d.f[id] && d.f[id] !== 'missed') delete d.f[id]; else d.f[id] = (id === 'dhuhr' && isFriday(k) && S.set.level !== 'start') ? 'juma' : 'done'; saveDay(k); const on = !!d.f[id]; haptic(on ? 'notify' : 'impact', on ? 'success' : 'light'); render(); if (on) celebrate(id); planToast(k, was); },
+    sunna(key) { const k = viewKey(), d = ensureDay(k), was = dayPlan(k).complete; if (d.s[key]) delete d.s[key]; else d.s[key] = 1; saveDay(k); haptic('select'); render(); planToast(k, was); },
+    step(v) { const p = v.split(':'), key = p[0], delta = +p[1], cap = +p[2]; const k = viewKey(), d = ensureDay(k), was = dayPlan(k).complete; const f = key === 'qiyam' ? 'q' : 'w'; d[f] = clamp((d[f] || 0) + delta, 0, cap); saveDay(k); haptic('select'); render(); planToast(k, was); },
     sheet(v) { const ci = v.indexOf(':'); if (ci > 0) S.sheet = { type: v.slice(0, ci), id: v.slice(ci + 1) }; else S.sheet = { type: v }; if (v === 'city') { S.city = { q: '', results: [], loading: false, error: '' }; } render(); if (v === 'city') { const n = document.querySelector('[data-in="city"]'); if (n && !('ontouchstart' in window)) n.focus(); } },
     closeSheet() { S.sheet = null; render(); },
     /* цели по Корану и наизусть */
@@ -2957,10 +3176,13 @@
     goalBack() { const g = ensureGoal(); if (g) { g.st = 'new'; saveGam(); render(); } },
     gamToggle() { S.set.gam = S.set.gam === false; saveSettings(); if (S.set.gam) { haptic('notify', 'success'); setTimeout(gamCheck, 300); } render(); },
     toPath() { S.sheet = null; S.tab = 'progress'; S.prog.period = 'path'; render(); $('#scroll').scrollTop = 0; },
-    setStatus(v) { const i = v.indexOf(':'), id = v.slice(0, i), st = v.slice(i + 1); const k = viewKey(), d = ensureDay(k); if (st) d.f[id] = st; else delete d.f[id]; saveDay(k); const good = st && st !== 'missed';
+    setStatus(v) { const i = v.indexOf(':'), id = v.slice(0, i), st = v.slice(i + 1); const k = viewKey(), d = ensureDay(k), was = dayPlan(k).complete; if (st) d.f[id] = st; else delete d.f[id]; saveDay(k); const good = st && st !== 'missed';
       // после отметки лист остаётся открытым, если при намазе есть сунна: она поднимается наверх
-      const keep = good && S.sheet && S.sheet.type === 'status' && prayerSunna(id, k).length > 0;
-      if (!keep) S.sheet = null; else S.sheet.top = 1; haptic(good ? 'notify' : 'impact', good ? 'success' : 'light'); render(); if (good) celebrate(id); },
+      const keep = good && S.sheet && S.sheet.type === 'status' && prayerSunna(id, k).some((x) => x[2]);
+      if (!keep) S.sheet = null; else S.sheet.top = 1;
+      const dp = dayPlan(k);
+      haptic(good ? 'notify' : 'impact', good ? 'success' : 'light'); render(); if (good) celebrate(id);
+      if (!planToast(k, was) && JM[st] && !dp.inPlan['jm_' + id]) toast('+1 сверх плана: ' + (st === 'jamaat' ? 'намаз джамаатом' : 'намаз в мечети')); },
     setFast(v) { const k = viewKey(), d = ensureDay(k); d.p = v; saveDay(k); S.sheet = null; haptic('select'); render(); },
     qadaDone() { if (S.set.qadaBase > 0) { S.set.qadaBase--; saveSettings(); S.gam.qadaMade = (S.gam.qadaMade || 0) + 1; const wk = weekStart(todayKey()); S.gam.qw = S.gam.qw || {}; S.gam.qw[wk] = (S.gam.qw[wk] || 0) + 1; Object.keys(S.gam.qw).forEach((x) => { if (x < addDays(wk, -56)) delete S.gam.qw[x]; }); saveGam(); dataVer++; gamCheckSoon(); toast('Альхамдулиллях! Долг уменьшился'); } else toast('Откройте день с пропуском в «Прогрессе» и смените статус на «Каза»'); haptic('notify', 'success'); render(); },
     base(v) { const p = v.split(':'); S.set[p[0]] = Math.max(0, (S.set[p[0]] || 0) + +p[1]); saveSettings(); haptic('select'); render(); },
@@ -3273,6 +3495,8 @@
     if (canSync()) syncNow(true);
     botSoon(800);
     openFromLink();
+    // переход на личный план (v2.4): набор по прежнему уровню, один раз показываем «Мой план»
+    if (S.set.level && !S.set.plan) { S.set.plan = planSt(); saveSettings(); if (!S.sheet) { S.sheet = { type: 'plan', intro: 1 }; render(); } }
     setTimeout(gamStart, 500);
     let lastVisibleSync = Date.now();
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { refreshFromCloud(); if (Date.now() - (S.set.botSeen || 0) > 60000) botSoon(500); } });

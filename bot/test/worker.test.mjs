@@ -78,10 +78,22 @@ calls = []; await (NOW = T(14, 35), tick(env, NOW));
 ok(calls.some((c) => c.m === 'deleteMessage') && calls.some((c) => c.m === 'sendMessage' && /<b>Аср<\/b> ещё не отмечен/.test(c.p.text)), 'через 45 минут: старая карточка удалена, новая «Аср ещё не отмечен» с кнопками');
 // 8. Зухр отмечен в приложении заранее: «скоро» не присылается
 calls = []; await (NOW = T(11, 36), tick(env, NOW)); ok(!calls.some((c) => /Зухр/.test(c.p.text || '')), 'Зухр отмечен в приложении — напоминания нет');
+// 9б. итог дня по личному плану: план 7 пунктов, 2 дела сверх плана; фарды и джамаат сервер считает по своим отметкам
+{
+  const { planOf } = await import('../worker.js');
+  const d = { f: { fajr: ['mosque', 1, 'b'], dhuhr: ['done', 1, 'a'], asr: ['done', 1, 'a'], maghrib: ['jamaat', 1, 'a'], isha: ['done', 1, 'a'] }, pc: { n: 7, dn: 2, ex: 1, jm: [] } };
+  const pl = planOf(d);
+  ok(pl.done === 7 && pl.complete && pl.ex === 3 && pl.pct === 143, 'план: 7 из 7, сверх плана 1 + джамаат Фаджра и Магриба = 143% (' + pl.pct + ')');
+  const pl2 = planOf({ f: { fajr: ['missed', 1, 'a'], dhuhr: ['done', 1, 'a'] }, pc: { n: 7, dn: 2, ex: 1, jm: ['fajr'] } });
+  ok(pl2.done === 3 && !pl2.complete && pl2.pct === 43 && pl2.missed, 'пропущен фард: 3 из 7 = 43%, сверх плана не засчитывается (' + pl2.pct + ')');
+  NOW = T(6, 50); r = await sync({ days: { 20261116: { u: T(6, 49), f: { dhuhr: 'done' }, pc: { n: 7, dn: 1, ex: 0, jm: [] } } }, seen: T(6, 45) });
+  const raw = JSON.parse(sq.prepare("SELECT f FROM days WHERE uid = ? AND k = '20261116'").get(OWNER).f);
+  ok(raw._pc && raw._pc.n === 7, 'итог плана из приложения сохранён на сервере');
+}
 // 9. итог дня (тихий) и пост
 calls = []; await (NOW = T(21, 30), tick(env, NOW));
 const sum = calls.find((c) => /Итог дня/.test(c.p.text || '')), fast = calls.find((c) => /желательный пост/.test(c.p.text || ''));
-ok(sum && /Намазы: 1 из 5/.test(sum.p.text) && sum.p.disable_notification === true, 'итог дня без звука: «Намазы: 1 из 5»');
+ok(sum && /План дня: \d+% · 2 из 7/.test(sum.p.text) && sum.p.disable_notification === true, 'итог дня без звука, по плану: ' + (sum && sum.p.text.split('\n')[2]));
 ok(!!fast, 'напоминание о посте завтра');
 // 10. перед сном
 calls = []; await (NOW = T(19, 0), tick(env, NOW)); ok(calls.some((c) => /Азкары перед сном/.test(c.p.text || '') && /open=sleep/.test(JSON.stringify(c.p.reply_markup))), 'азкары перед сном через 1,5 часа после Иши');

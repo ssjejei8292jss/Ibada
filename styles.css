@@ -812,3 +812,26 @@ button.card { transition: transform .12s ease; }
 .sl-ctl .seg.mini button { white-space: nowrap; }
 /* v14.1: пояснение к процентам в шторке статуса */
 .st-note { margin: 2px 0 0; padding: 0 6px; line-height: 1.5; text-align: center; }
+
+/* ===== личный план (v2.4) ===== */
+.sec-link { flex: none; border: 0; background: none; padding: 6px 0 6px 10px; font: inherit; font-size: var(--t-meta); font-weight: 700; color: var(--gold); cursor: pointer; white-space: nowrap; }
+.sec-foot { margin: 8px 8px 0; font-size: 12.5px; line-height: 1.45; color: var(--sub); }
+.pc-card { margin-top: 12px; padding: 16px; display: flex; flex-direction: column; gap: 6px; background: radial-gradient(120% 90% at 100% 0%, var(--emerald-soft), transparent 62%), var(--surface); }
+.pc-eb { font-size: 12px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--emerald-text); }
+.pc-t { font-family: var(--serif); font-size: 21px; font-weight: 600; line-height: 1.15; }
+.pc-m { font-size: 14px; line-height: 1.45; color: var(--sub); }
+.pc-q { font-size: 12.5px; line-height: 1.45; color: var(--sub); font-style: italic; padding-left: 10px; border-left: 2px solid var(--gold-line); margin: 4px 0 2px; }
+.pc-act { display: flex; gap: 8px; margin-top: 6px; }
+.pc-act .btn { flex: 1; min-height: 44px; }
+.pl-row { align-items: center; }
+.pl-h { display: block; margin-top: 4px; font-size: 12px; line-height: 1.4; color: var(--sub); font-style: italic; }
+.pl-h b, .pl-gh b { font-style: normal; font-weight: 700; }
+.pl-gh { margin: -2px 8px 8px; font-size: 12.5px; line-height: 1.45; color: var(--sub); font-style: italic; }
+.pl-intro { padding: 12px 14px; border-radius: 16px; background: var(--emerald-soft); font-size: 14px; line-height: 1.45; }
+.pl-presets { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.pl-presets .btn { min-height: 44px; }
+.pl-foot { padding: 4px 6px; line-height: 1.5; }
+.opt-pct.st-plus { width: auto; padding: 0 10px; background: var(--gold-soft); color: var(--gold-hi); font-size: 12px; }
+.opt-pct.st-plus:empty { display: none; }
+.td-ring.over .num { color: var(--gold-hi); }
+.hov { box-shadow: inset 0 0 0 2px var(--emerald); }
