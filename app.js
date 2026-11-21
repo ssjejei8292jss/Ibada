@@ -271,11 +271,11 @@
   const ensureDay = (k) => { if (!S.days[k]) S.days[k] = blankDay(); return S.days[k]; };
 
   /* ===== план и баллы ===== */
-  // что входит в план этого дня (1 — в плане); цель тахаджуда — 2 ракаата, дуа после омовения — 1 раз
+  // что входит в план этого дня (1 — в плане); цель тахаджуда — 2 ракаата, дуа после омовения — 5 раз
   function planFor(k) {
     const p = {}, dp = dayPlan(k);
     SUNNA_KEYS.forEach((x) => { p[x] = dp.inPlan[x] ? 1 : 0; });
-    p.qiyam = dp.inPlan.qiyam ? 2 : 0; p.wudu = dp.inPlan.wudu ? 1 : 0;
+    p.qiyam = dp.inPlan.qiyam ? 2 : 0; p.wudu = dp.inPlan.wudu ? 5 : 0;
     return p;
   }
   const azDone = (d, which) => D.AZKAR[which].every((a, i) => ((which === 'morning' ? d.am : d.ae)[i] || 0) >= a.n);
@@ -304,7 +304,7 @@
     return n;
   }
   // сунна при намазе для листа статуса (пусто на уровне «Начало» и в простом режиме)
-  const APP_VERSION = '2.4.2';
+  const APP_VERSION = '2.4.3';
   function prayerSunna(id, k) {
     if (!(S.set.detailed && S.set.level !== 'start')) return [];
     const d = getDay(k), dp = dayPlan(k);
@@ -356,13 +356,48 @@
     { id: 'sadaqa', g: 'day', t: 'Садака', m: 'Любое пожертвование или доброе дело', b: 'Не уменьшает имущества · Муслим', h: '«Садака не уменьшает имущества»', src: 'Муслим 2588' },
     { id: 'quran', g: 'day', t: 'Чтение Корана', m: 'Хотя бы страница по плану чтения', ok: (d, k) => readOn(k), b: 'Заступник в Судный день · Муслим', h: '«Читайте Коран: в День воскресения он придёт заступником за своих людей»', src: 'Муслим 804' },
     { id: 'zikr', g: 'day', t: 'Зикры', m: '100 за день', ok: (d) => zTotal(d) >= 100, b: 'Как пена морская · аль-Бухари', h: '«Кто скажет „Субханаллахи ва бихамдихи“ сто раз за день, с того снимутся грехи, даже если их как пены морской»', src: 'аль-Бухари 6405, Муслим 2691' },
-    { id: 'wudu', g: 'day', t: 'Дуа после омовения', m: 'Шахада после вуду', ok: (d) => (d.w || 0) >= 1, b: 'Восемь врат Рая · Муслим', h: '«Кто совершит омовение и скажет: „Ашхаду ан ля иляха илляллах…“, для того откроются восемь врат Рая»', src: 'Муслим 234' },
+    { id: 'wudu', g: 'day', t: 'Дуа после омовения', m: 'После каждого омовения · 5 раз в день', ok: (d) => (d.w || 0) >= 5, b: 'Восемь врат Рая · Муслим', h: '«Кто совершит омовение и скажет: „Ашхаду ан ля иляха илляллах…“, для того откроются восемь врат Рая»', src: 'Муслим 234' },
     { id: 'kahf', g: 'fri', t: 'Сура аль-Кахф', fri: 1, b: 'Свет до следующей пятницы', h: '«Кто прочтёт суру „Пещера“ в пятницу, для того свет будет сиять между двумя пятницами»', src: 'аль-Хаким, аль-Байхаки' },
     { id: 'ghusl', g: 'fri', t: 'Гусль', m: 'Перед пятничным намазом', fri: 1, notTravel: 1, b: 'Сунна пятницы · аль-Бухари', h: '«Когда кто-нибудь из вас идёт на джума, пусть совершит гусль»', src: 'аль-Бухари 877, Муслим 844' },
     { id: 'fast', g: 'fast', t: 'Желательный пост', m: 'Понедельник, четверг, белые дни, Арафа, Ашура', when: (k) => { const fi = fastingInfo(k); return !!fi && fi.kind === 'rec'; }, ok: (d) => d.p === 'fast', b: 'Дела представляются Аллаху · ат-Тирмизи', h: '«Дела представляются Аллаху в понедельник и четверг, и я люблю, чтобы моё дело было представлено, когда я пощусь»', src: 'ат-Тирмизи 747' }
   ];
   PI.forEach((x, i) => { x.i = i; if (!x.ok) x.ok = (d) => !!(d.s || {})[x.id]; });
   const PIX = {}; PI.forEach((x) => { PIX[x.id] = x; });
+  // Полные тексты хадисов (смысловой перевод) — открываются кнопкой с книгой у каждого дела. Проверяет знающий человек.
+  const HD = {
+    fard: { t: 'Фард — главное', n: 'Абу Хурайры', x: 'Посланник Аллаха ﷺ сказал: «Поистине, Аллах Всевышний сказал: „Тому, кто проявит враждебность к Моему приближённому, Я объявлю войну. Раб Мой не приближается ко Мне ничем более любимым Мною, чем то, что Я вменил ему в обязанность. И раб Мой будет приближаться ко Мне дополнительными делами, пока Я не полюблю его. А когда Я полюблю его, Я стану его слухом, которым он слышит, его зрением, которым он видит, его рукой, которой он берёт, и его ногой, которой он ходит. И если он попросит Меня, Я непременно дам ему, а если обратится ко Мне за защитой, Я непременно защищу его“».', s: 'аль-Бухари 6502', g: 'хадис кудси' },
+    jm27: { t: 'Намаз в джамаате', n: 'Ибн Умара', x: 'Посланник Аллаха ﷺ сказал: «Намаз, совершённый в джамаате, превосходит намаз, совершённый в одиночку, на двадцать семь степеней».', s: 'аль-Бухари 645, Муслим 650' },
+    jmNight: { t: 'Иша и Фаджр в джамаате', n: 'Усмана ибн Аффана', x: 'Я слышал, как Посланник Аллаха ﷺ сказал: «Кто совершил ночной намаз (Иша) в джамаате, тот словно простоял в молитве половину ночи, а кто совершил и утренний намаз (Фаджр) в джамаате, тот словно простоял в молитве всю ночь».', s: 'Муслим 656', more: ['jm27'] },
+    rat12: { t: 'Двенадцать ракаатов сунны', n: 'Умм Хабибы', x: 'Я слышала, как Посланник Аллаха ﷺ сказал: «Нет такого раба-мусульманина, который каждый день совершал бы ради Аллаха двенадцать ракаатов добровольного намаза помимо обязательного, чтобы Аллах не построил ему дом в Раю».', s: 'Муслим 728', more: ['rat12t'] },
+    rat12t: { t: 'Какие это ракааты', n: 'Умм Хабибы', x: 'Посланник Аллаха ﷺ сказал: «Тому, кто в течение дня и ночи совершит двенадцать ракаатов, будет построен дом в Раю: четыре ракаата до Зухра и два после него, два ракаата после Магриба, два ракаата после Иши и два ракаата перед Фаджром».', s: 'ат-Тирмизи 415', g: 'хасан сахих' },
+    fajrS: { t: 'Сунна Фаджра', n: 'Аиши', x: 'Пророк ﷺ сказал: «Два ракаата (перед) утренним намазом лучше этого мира и всего, что в нём».', s: 'Муслим 725', more: ['rat12'] },
+    dhuhr4: { t: 'Сунна Зухра', n: 'Умм Хабибы', x: 'Я слышала, как Посланник Аллаха ﷺ сказал: «Того, кто постоянно совершает четыре ракаата до полуденного намаза и четыре после него, Аллах сделает запретным для Огня».', s: 'Абу Дауд 1269, ат-Тирмизи 428', g: 'достоверный', more: ['rat12'] },
+    tasbih: { t: 'Азкары после намаза', n: 'Абу Хурайры', x: 'Посланник Аллаха ﷺ сказал: «Тому, кто после каждого намаза тридцать три раза скажет „Субхана-Ллах“, тридцать три раза — „Аль-хамду ли-Ллях“ и тридцать три раза — „Аллаху акбар“, что составит девяносто девять, а для ровного счёта скажет: „Ля иляха илля-Ллаху вахдаху ля шарика лях, ляху-ль-мульку ва ляху-ль-хамду ва хуа ‘аля кулли шай’ин кадир“, — простятся его прегрешения, даже если будет их столько, сколько пены в море».', s: 'Муслим 597' },
+    sayyid: { t: 'Сайид аль-истигфар', n: 'Шаддада ибн Ауса', x: 'Пророк ﷺ сказал: «Лучшая из мольб о прощении — сказать: „Аллахумма, Анта Рабби, ля иляха илля Анта, халяк‘тани ва ана ‘абдук, ва ана ‘аля ‘ахдика ва ва‘дика ма-стата‘ту. А‘узу бика мин шарри ма сана‘ту, абу’у ляка би-ни‘матика ‘аляййа, ва абу’у би-занби, фа-гфир ли, фа-иннаху ля йагфиру-з-зунуба илля Анта“ (О Аллах, Ты — мой Господь, нет бога, кроме Тебя. Ты сотворил меня, а я — Твой раб, и я буду хранить верность Тебе, пока у меня хватит сил. Прибегаю к Тебе от зла того, что я сделал, признаю милость Твою ко мне и признаю свой грех. Прости же меня, ведь никто не прощает грехи, кроме Тебя). Кто произнесёт эти слова днём, будучи убеждённым в них, и умрёт в тот же день до наступления вечера, тот окажется среди обитателей Рая. И кто произнесёт их ночью, будучи убеждённым в них, и умрёт до наступления утра, тот окажется среди обитателей Рая».', s: 'аль-Бухари 6306' },
+    kursi: { t: 'Аят аль-Курси перед сном', n: 'Абу Хурайры', x: 'Абу Хурайра охранял закят Рамадана, и к нему трижды приходил некто и брал из еды. На третий раз тот сказал: «Когда ляжешь в постель, прочитай аят аль-Курси, и тогда с тобой всё время будет хранитель от Аллаха, а шайтан не сможет приблизиться к тебе до самого утра». Пророк ﷺ сказал: «Он сказал тебе правду, хотя он и большой лжец. Это был шайтан».', s: 'аль-Бухари 2311, 5010' },
+    witr: { t: 'Витр', n: 'Ибн Умара', x: 'Пророк ﷺ сказал: «Сделайте витр последним вашим намазом ночью».', s: 'аль-Бухари 998, Муслим 751' },
+    qiyam: { t: 'Ночной намаз', n: 'Абу Хурайры', x: 'Посланник Аллаха ﷺ сказал: «Лучший пост после Рамадана — пост в месяц Аллаха мухаррам, а лучший намаз после обязательного — ночной намаз».', s: 'Муслим 1163' },
+    duha: { t: 'Духа', n: 'Абу Зарра', x: 'Пророк ﷺ сказал: «Каждое утро каждому из вас следует подавать садаку за каждый свой сустав. Каждое „Субхана-Ллах“ — садака, каждое „Аль-хамду ли-Ллях“ — садака, каждое „Ля иляха илля-Ллах“ — садака, каждое „Аллаху акбар“ — садака, побуждение к одобряемому — садака, удержание от порицаемого — садака. А заменить всё это могут два ракаата, совершённые в первой половине дня (духа)».', s: 'Муслим 720' },
+    sadaqa: { t: 'Садака', n: 'Абу Хурайры', x: 'Посланник Аллаха ﷺ сказал: «Садака не уменьшает имущества. Аллах непременно возвышает раба, который прощает, и никто не проявит смирения ради Аллаха без того, чтобы Аллах не возвысил его».', s: 'Муслим 2588' },
+    quran: { t: 'Чтение Корана', n: 'Абу Умамы', x: 'Я слышал, как Посланник Аллаха ﷺ сказал: «Читайте Коран, ибо, поистине, в День воскресения он явится заступником за своих людей».', s: 'Муслим 804' },
+    zikr: { t: 'Субханаллахи ва бихамдихи', n: 'Абу Хурайры', x: 'Посланник Аллаха ﷺ сказал: «Тому, кто сто раз за день скажет: „Субхана-Ллахи ва би-хамдихи“ (Пречист Аллах и хвала Ему), простятся его прегрешения, даже если будет их столько, сколько пены в море».', s: 'аль-Бухари 6405, Муслим 2691' },
+    wudu: { t: 'Дуа после омовения', n: 'Умара ибн аль-Хаттаба', x: 'Посланник Аллаха ﷺ сказал: «Если кто-нибудь из вас совершит омовение, тщательно его выполнив, а потом скажет: „Ашхаду ан ля иляха илля-Ллаху вахдаху ля шарика лях, ва ашхаду анна Мухаммадан ‘абдуху ва расулюх“ (Свидетельствую, что нет бога, кроме Аллаха, Единственного, у Которого нет сотоварища, и свидетельствую, что Мухаммад — Его раб и Посланник), то для него непременно откроются восемь врат Рая, и он войдёт через любые из них, какие пожелает».', s: 'Муслим 234' },
+    kahf: { t: 'Сура аль-Кахф в пятницу', n: 'Абу Саида аль-Худри', x: 'Пророк ﷺ сказал: «Для того, кто прочтёт суру „Пещера“ в пятницу, свет будет сиять между двумя пятницами».', s: 'аль-Хаким, аль-Байхаки', g: 'достоверным назвал аль-Альбани' },
+    ghusl: { t: 'Гусль в пятницу', n: 'Ибн Умара', x: 'Посланник Аллаха ﷺ сказал: «Когда кто-нибудь из вас идёт на пятничную молитву, пусть совершит полное омовение».', s: 'аль-Бухари 877, Муслим 844' },
+    fast: { t: 'Пост в понедельник и четверг', n: 'Абу Хурайры', x: 'Посланник Аллаха ﷺ сказал: «Дела представляются Аллаху в понедельник и четверг, и я люблю, чтобы моё дело было представлено, когда я пощусь».', s: 'ат-Тирмизи 747', g: 'хасан' },
+    steady: { t: 'Постоянство', n: 'Аиши', x: 'Посланник Аллаха ﷺ сказал: «Самые любимые Аллахом дела — те, что совершаются постоянно, даже если они незначительны».', s: 'аль-Бухари 6464, Муслим 783' }
+  };
+  // какой хадис открывается у дела
+  const HD_OF = { jm_fajr: 'jmNight', jm_isha: 'jmNight', jm_dhuhr: 'jm27', jm_asr: 'jm27', jm_maghrib: 'jm27', fajrSunna: 'fajrS', dhuhrBefore: 'dhuhr4', dhuhrAfter: 'rat12', maghribAfter: 'rat12', ishaAfter: 'rat12', fajrAzkar: 'tasbih', dhuhrAzkar: 'tasbih', asrAzkar: 'tasbih', maghribAzkar: 'tasbih', ishaAzkar: 'tasbih', am: 'sayyid', ae: 'sayyid', sl: 'kursi', witr: 'witr', qiyam: 'qiyam', duha: 'duha', sadaqa: 'sadaqa', quran: 'quran', zikr: 'zikr', wudu: 'wudu', kahf: 'kahf', ghusl: 'ghusl', fast: 'fast' };
+  const hdBtn = (hid, title) => HD[hid] ? '<button class="hx-i" data-a="hdOpen" data-v="' + hid + '" aria-label="Хадис: ' + esc(title || HD[hid].t) + '">' + I.book + '</button>' : '';
+  // строку дела (кнопку или блок) дополняем слева кнопкой «хадис»
+  function withHd(html, id, title) {
+    const hid = HD_OF[id]; if (!hid) return html;
+    const m = /^<button class="li( [^"]*)?"/.exec(html);
+    if (m) return '<div class="li hx">' + hdBtn(hid, title) + '<button class="hx-main' + (m[1] || '') + '"' + html.slice(m[0].length) + '</div>';
+    if (html.indexOf('<div class="li">') === 0) return '<div class="li hx">' + hdBtn(hid, title) + '<div class="hx-main">' + html.slice('<div class="li">'.length) + '</div>';
+    return html;
+  }
   const FARD_HADITH = ['«Любимейшее из того, чем раб приближается ко Мне, — то, что Я вменил ему в обязанность»', 'хадис кудси, аль-Бухари 6502'];
   const STEADY_HADITH = ['«Самые любимые Аллахом дела — постоянные, даже если они малы»', 'аль-Бухари 6464, Муслим 783'];
   const PRESET = {
@@ -719,6 +754,7 @@
 
   /* ===== иконки ===== */
   const I = {
+    book: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 6.5C10 5 7 4.5 4 5v13c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5V5c-3-.5-6 0-8 1.5z"/><path d="M12 6.5V19"/></svg>',
     check: '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>',
     checkSm: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>',
     down: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="opacity:.75"><path d="m7 10 5 5 5-5"/></svg>',
@@ -926,7 +962,7 @@
     check(31, 'ghusl', 'Гусль', 'Перед пятничным намазом');
     check(morning ? 25 : 40, 'duha', 'Духа-намаз', 'После восхода, до Зухра');
     check(night ? 22 : 50, 'witr', 'Витр-намаз', 'После Иши, до рассвета');
-    [['qiyam', 'Тахаджуд', 'ракаатов', 2, 20, 2], ['wudu', 'Дуа после омовения', 'раз', 1, 10, 1]].forEach((x) => {
+    [['qiyam', 'Тахаджуд', 'ракаатов', 2, 20, 2], ['wudu', 'Дуа после омовения', 'раз', 1, 10, 5]].forEach((x) => {
       if (!applies(x[0])) return;
       const v = x[0] === 'qiyam' ? d.q : d.w, goal = x[5], ok = v >= goal;
       if (!dp.inPlan[x[0]] && x[0] === 'wudu' && !v) return; // дуа после омовения вне плана — только если уже отмечали
@@ -943,6 +979,10 @@
       add('zikr', 35, item('zikr', 'tasbih', 'Зикры', sub('zikr', dp.inPlan.zikr ? 'Цель — 100 за день' : 'Тасбих'), meter(total + ' ' + plural(total, 'зикр', 'зикра', 'зикров'), dp.inPlan.zikr ? total / 100 : D.ZIKRS.reduce((a, x, i) => a + Math.min(z[i] || 0, 100), 0) / (D.ZIKRS.length * 100))));
     }
     const sort = (a, b) => a.pr - b.pr || a.i - b.i;
+    rows.forEach((r) => { r.html = withHd(r.html, r.id, (PIX[r.id] || {}).t); });
+    // джамаат вне плана: намазы в мечети или джамаатом — дела сверх плана, отдельной строкой
+    const jmEx = dp.extras.filter((x) => x.g === 'jm');
+    if (jmEx.length) rows.push({ id: 'jm', pr: 5, i: rows.length, html: '<div class="li hx">' + hdBtn(jmEx.some((x) => x.pr === 'fajr' || x.pr === 'isha') ? 'jmNight' : 'jm27', 'Намаз в джамаате') + '<div class="hx-main"><span class="li-c"><span class="li-t">Джамаат и мечеть</span><span class="li-m">' + jmEx.map((x) => NM(k, x.pr)).join(', ') + ' · ' + PIX.jm_dhuhr.b + '</span></span><span class="li-tag num">+' + jmEx.length + '</span></div></div>' });
     const planRows = rows.filter((r) => dp.inPlan[r.id]).sort(sort), extraRows = rows.filter((r) => !dp.inPlan[r.id]).sort(sort);
     // при намазах: сунна и азкары из плана отмечаются в листе каждого намаза — здесь только сводка
     const atPr = dp.items.filter((x) => x.pr), atPrDone = atPr.filter((x) => x.ok(d, k)).length;
@@ -950,12 +990,12 @@
     const modeName = { n: 'Обычный день', m: 'Минимальный день', t: 'В пути', s: 'Болезнь' }[dp.mode] || 'Обычный день';
     const nPlan = dp.items.length;
     let planHtml = '';
-    if (atPr.length) planHtml += '<div class="li"><span class="li-c"><span class="li-t">При намазах</span><span class="li-m">Сунна, азкары и джамаат — отмечаются в каждом намазе</span></span>' + meter(atPrDone + ' из ' + atPr.length, atPrDone / atPr.length) + '</div>';
+    if (atPr.length) planHtml += '<div class="li hx">' + hdBtn('rat12', 'Сунна при намазах') + '<div class="hx-main"><span class="li-c"><span class="li-t">При намазах</span><span class="li-m">Сунна, азкары и джамаат — отмечаются в каждом намазе</span></span>' + meter(atPrDone + ' из ' + atPr.length, atPrDone / atPr.length) + '</div></div>';
     planHtml += planRows.map((r) => r.html).join('') + goals.sort(sort).map((r) => r.html).join('');
     if (!nPlan) planHtml += item('sheet', 'plan', dp.mode === 'n' ? 'В плане пока только фарды' : 'Сегодня в плане только фарды', dp.mode === 'n' ? 'Добавьте то, что уже делаете постоянно' : 'Остальное сегодня — сверх плана', '<span class="li-chev">' + I.chev + '</span>');
     planHtml += item('sheet', 'dayMode', 'Режим дня', dp.mode === 'm' ? 'В плане только то, что вы не оставляете никогда' : dp.mode === 't' ? 'Облегчённый план в пути' : dp.mode === 's' ? 'Только фарды, насколько получается' : 'Нажмите, если день тяжёлый, вы в пути или болеете', '<span class="li-tag">' + modeName + '</span>', ' aria-label="Режим дня: ' + modeName + '. Сменить"');
     out.push('<section class="sec" aria-label="Мой план"><div class="sec-h"><h2 class="h2">Мой план</h2><button class="sec-link" data-a="sheet" data-v="plan">' + (5 + nPlan) + ' ' + plural(5 + nPlan, 'пункт', 'пункта', 'пунктов') + ' · изменить</button></div><div class="card list">' + planHtml + '</div></section>');
-    if (extraRows.length || dp.ex) {
+    if (extraRows.length) {
       const LIM = 4, open = S.set.todayAll || extraRows.length <= LIM + 1;
       const shown = (open ? extraRows : extraRows.slice(0, LIM)).map((r) => r.html);
       if (extraRows.length > LIM + 1) shown.push('<button class="li li-more" data-a="todayAll" aria-expanded="' + open + '"><span class="li-c"><span class="li-t">' + (open ? 'Свернуть' : 'Ещё ' + (extraRows.length - LIM) + ' ' + plural(extraRows.length - LIM, 'дело', 'дела', 'дел')) + '</span></span><span class="li-chev' + (open ? ' up' : '') + '">' + I.down + '</span></button>');
@@ -2704,18 +2744,23 @@
       const d = getDay(k), subs = prayerSunna(sh.id, k), first = !!cur && cur !== 'missed' && subs.some((x) => x[2]);
       const subsHtml = subs.length ? '<div class="sh-sec">' + (first ? 'Сунна при намазе — отметьте, что совершили' : 'Сунна при намазе') + '</div><div class="card list">' + subs.map((x) => { const on = !!d.s[x[0]], L = SUNNA_FULL[x[0]] || [x[1], '']; return '<button class="li" data-a="sunna" data-v="' + x[0] + '" aria-pressed="' + on + '"><span class="li-c"><span class="li-t">' + L[0] + '</span>' + '<span class="li-m">' + [L[1], x[2] ? '' : 'сверх плана'].filter(Boolean).join(' · ') + '</span></span><span class="ck2' + (on ? ' st-done' : '') + '">' + (on ? I.st.done : '') + '</span></button>'; }).join('') + '</div>' : '';
       const title = sh.id === 'dhuhr' && isFriday(k) ? 'Зухр / Джума' : pr.name, curName = cur && (opts.find((o) => o[0] === cur) || [])[1];
-      const optsHtml = opts.map((o) => opt('setStatus', sh.id + ':' + o[0], cur === o[0], o[1], o[2], o[3], jmCls)).join('') + (jmIn ? '' : '<p class="small sub st-note">' + (sh.id === 'fajr' || sh.id === 'isha' ? PIX['jm_' + sh.id].h + ' (' + PIX['jm_' + sh.id].src + ')' : PG[0][2] + ' (' + PG[0][3] + ')') + '. Награду знает только Аллах.</p>');
+      const optsHtml = opts.map((o) => opt('setStatus', sh.id + ':' + o[0], cur === o[0], o[1], o[2], o[3], jmCls)).join('') + (jmIn ? '' : '<p class="small sub st-note">' + (sh.id === 'fajr' || sh.id === 'isha' ? PIX['jm_' + sh.id].h + ' (' + PIX['jm_' + sh.id].src + ')' : PG[0][2] + ' (' + PG[0][3] + ')') + '. Награду знает только Аллах. <button class="hd-link" data-a="hdOpen" data-v="' + HD_OF['jm_' + sh.id] + '">Читать хадис полностью</button></p>');
       // уже отмечен и есть сунна: сунна наверху, под ней «Готово», статус можно изменить ниже
       body = first
         ? head(title, timeLine(k, pr, T) + ' · отмечено: ' + curName) + subsHtml + '<button class="btn gold block st-done-btn" data-a="closeSheet">Готово</button><div class="sh-sec">Изменить статус</div>' + optsHtml + '<button class="btn block quiet" data-a="setStatus" data-v="' + sh.id + ':">Снять отметку</button>'
         : head(title, timeLine(k, pr, T) + ' · как вы совершили?') + optsHtml + subsHtml + (cur ? '<button class="btn block quiet" data-a="setStatus" data-v="' + sh.id + ':">Снять отметку</button>' : '');
+    } else if (sh.type === 'hadith') {
+      const h = HD[sh.id] || HD.fard, blk = (x) => '<figure class="hd-card"><figcaption class="hd-n">' + (/^(Аиш|Умм)/.test(x.n) ? 'Передала' : 'Передал') + ' ' + x.n + '</figcaption><blockquote class="hd-t">' + x.x + '</blockquote><p class="hd-s">' + x.s + (x.g ? ' · ' + x.g : '') + '</p></figure>';
+      body = head(h.t, 'Хадис · смысловой перевод') + blk(h) + (h.more || []).map((id) => HD[id] ? '<div class="sh-sec">' + HD[id].t + '</div>' + blk(HD[id]) : '').join('') +
+        '<p class="small sub pl-foot">Награду знает только Аллах. Перевод смыслов передаёт значение, но не заменяет арабский оригинал.</p>' +
+        '<div class="pl-presets two"><button class="btn ghost" data-a="hdCopy" data-v="' + sh.id + '">Скопировать</button><button class="btn gold" data-a="hdBack">' + (S.hdPrev ? 'Назад' : 'Готово') + '</button></div>';
     } else if (sh.type === 'plan') {
       // Мой план (v2.4): пять фардов всегда, остальное — то, что вы уже делаете постоянно; у каждого дела — хадис
       const cur = planNow(), n = 5 + cur.length;
-      const row = (x) => { const on = cur.indexOf(x.id) >= 0; return '<button class="li pl-row" role="switch" aria-checked="' + on + '" data-a="planTog" data-v="' + x.id + '"><span class="li-c"><span class="li-t">' + x.t + '</span>' + (x.m ? '<span class="li-m">' + x.m + '</span>' : '') + (x.h ? '<span class="pl-h">' + x.h + ' <b>' + x.src + '</b></span>' : '') + '</span><span class="switch" aria-checked="' + on + '"><i></i></span></button>'; };
+      const row = (x) => { const on = cur.indexOf(x.id) >= 0; return withHd('<button class="li pl-row" role="switch" aria-checked="' + on + '" data-a="planTog" data-v="' + x.id + '"><span class="li-c"><span class="li-t">' + x.t + '</span>' + (x.m ? '<span class="li-m">' + x.m + '</span>' : '') + (x.h ? '<span class="pl-h">' + x.h + ' <b>' + x.src + '</b></span>' : '') + '</span><span class="switch" aria-checked="' + on + '"><i></i></span></button>', x.id, x.t); };
       body = head('Мой план', n + ' ' + plural(n, 'пункт', 'пункта', 'пунктов') + ' = 100% · всё сверх — перевыполнение') +
         (sh.intro ? '<div class="pl-intro"><b>Теперь у вас личный план.</b> Его выполнение — это 100%. Набор собран по вашему уровню: оставьте только то, что уже делаете постоянно. Остальное будет сверх плана.</div>' : '') +
-        '<div class="sh-sec">Обязательное</div><div class="card list"><div class="li"><span class="li-c"><span class="li-t">Пять фардов</span><span class="li-m">Есть в любом плане, их нельзя убрать</span><span class="pl-h">' + FARD_HADITH[0] + ' <b>' + FARD_HADITH[1] + '</b></span></span><span class="li-tag">всегда</span></div></div>' +
+        '<div class="sh-sec">Обязательное</div><div class="card list"><div class="li hx">' + hdBtn('fard', 'Фард') + '<div class="hx-main"><span class="li-c"><span class="li-t">Пять фардов</span><span class="li-m">Есть в любом плане, их нельзя убрать</span><span class="pl-h">' + FARD_HADITH[0] + ' <b>' + FARD_HADITH[1] + '</b></span></span><span class="li-tag">всегда</span></div></div></div>' +
         PG.map((g) => { const xs = PI.filter((x) => x.g === g[0]); return '<div class="sh-sec">' + g[1] + '</div>' + (g[2] ? '<p class="pl-gh">' + g[2] + ' <b>' + g[3] + '</b></p>' : '') + '<div class="card list">' + xs.map(row).join('') + '</div>'; }).join('') +
         '<div class="sh-sec">Минимальный день</div><div class="card list">' + '<button class="li" data-a="sheet" data-v="planMin"><span class="li-c"><span class="li-t">То, что вы не оставляете никогда</span><span class="li-m">' + (planMin().length ? '5 фардов и ещё ' + planMin().length : 'Сейчас — 5 фардов') + '</span></span><span class="li-chev">' + I.chev + '</span></button></div>' +
         '<div class="sh-sec">Быстрый набор</div><div class="pl-presets">' + [['start', 'Начало'], ['effort', 'Усердие'], ['ihsan', 'Ихсан']].map((x) => '<button class="btn ghost" data-a="planPreset" data-v="' + x[0] + '">' + x[1] + '</button>').join('') + '</div>' +
@@ -3053,6 +3098,10 @@
     onbStart() { S.set.level = S.onbLevel; if (!S.set.plan) S.set.plan = { h: [['20000101', packItems(PRESET[S.onbLevel] || [])]], mn: '' }; saveSettings(); haptic('notify', 'success'); render(); $('#scroll').scrollTop = 0; },
     tab(v) { const sub = v.split(':'); v = sub[0]; if (sub[1]) S.prog.period = sub[1]; if (S.tab === v && v === 'quran') S.quran.reader = null; S.tab = v; S.sheet = null; render(); $('#scroll').scrollTop = 0; },
     zikr(v) { const p = String(v).split(':'); S.zView = p[0]; if (p[1]) S.azTab = p[1]; S.tab = 'zikr'; render(); $('#scroll').scrollTop = 0; },
+    // хадис открывается поверх листа, из которого его позвали (план, намаз), и «Назад» возвращает туда же
+    hdOpen(id) { S.hdPrev = S.sheet && S.sheet.type !== 'hadith' ? Object.assign({}, S.sheet, { intro: 0 }) : null; S.sheet = { type: 'hadith', id }; haptic('select'); render(); },
+    hdBack() { S.sheet = S.hdPrev || null; S.hdPrev = null; render(); },
+    hdCopy(id) { const h = HD[id]; if (!h) return; copyText(h.x + ' (' + h.s + (h.g ? ', ' + h.g : '') + ')'); },
     planTog(id) { const cur = planNow(), on = cur.indexOf(id) >= 0; setPlanItems(on ? cur.filter((x) => x !== id) : cur.concat(id)); haptic('select'); render(); },
     minTog(id) { const mn = planMin(), on = mn.indexOf(id) >= 0; setPlanMin(on ? mn.filter((x) => x !== id) : mn.concat(id)); haptic('select'); render(); },
     planPreset(v) { setPlanItems((PRESET[v] || []).slice()); haptic('notify', 'success'); toast('Набор «' + { start: 'Начало', effort: 'Усердие', ihsan: 'Ихсан' }[v] + '» — поправьте под себя'); render(); },
