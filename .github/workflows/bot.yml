@@ -44,7 +44,7 @@ jobs:
           dbid() { npx -y wrangler@4 d1 list --json 2>/dev/null | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{const x=JSON.parse(s).find(d=>d.name==='ibada-bot');console.log(x?x.uuid:'')}catch(e){console.log('')}})"; }
           DB=$(dbid); if [ -z "$DB" ]; then npx -y wrangler@4 d1 create ibada-bot 2>&1 | hide; DB=$(dbid); fi
           [ -n "$DB" ] || { echo "Не удалось создать базу"; exit 1; }
-          printf '\n[[d1_databases]]\nbinding = "DB"\ndatabase_name = "ibada-bot"\ndatabase_id = "%s"\n' "$DB" >> wrangler.toml
+          grep -q '^\[\[d1_databases\]\]' wrangler.toml || printf '\n[[d1_databases]]\nbinding = "DB"\ndatabase_name = "ibada-bot"\ndatabase_id = "%s"\n' "$DB" >> wrangler.toml
           npx -y wrangler@4 d1 execute ibada-bot --remote --file=schema.sql --yes 2>&1 | hide | tail -3
       - name: Выкладка
         if: steps.gate.outputs.go == '1'
@@ -75,7 +75,7 @@ jobs:
           if ! grep -qF "$LINE" bot-config.js; then
             sed -i "s#^window.IBADA_BOT = .*#$LINE#" bot-config.js
             git config user.name "github-actions[bot]"; git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git commit -am "Адрес сервера бота" && git push
+            git add bot-config.js && git commit -m "Адрес сервера бота" && git push
             gh api -X POST "repos/$GITHUB_REPOSITORY/pages/builds" >/dev/null || true
           fi
           echo "Сервер бота: $URL" >> "$GITHUB_STEP_SUMMARY"

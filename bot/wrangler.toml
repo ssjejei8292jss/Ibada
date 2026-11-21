@@ -13,7 +13,3 @@ crons = ["* * * * *"]
 
 # [[d1_databases]] добавляет workflow при выкладке (binding = "DB", database_name = "ibada-bot")
 
-[[d1_databases]]
-binding = "DB"
-database_name = "ibada-bot"
-database_id = "c5b06085-6f2f-459d-9f0a-8b8820b0b6fa"
