@@ -80,17 +80,27 @@
   function tzNowParts(date) {
     const tz = S.set.tz || undefined;
     try {
-      const p = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(date || new Date());
+      const p = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23' }).formatToParts(date || new Date());
       const o = {}; p.forEach((x) => { o[x.type] = x.value; });
-      return { y: +o.year, m: +o.month, d: +o.day };
-    } catch (e) { const d = date || new Date(); return { y: d.getFullYear(), m: d.getMonth() + 1, d: d.getDate() }; }
+      return { y: +o.year, m: +o.month, d: +o.day, h: +o.hour % 24 };
+    } catch (e) { const d = date || new Date(); return { y: d.getFullYear(), m: d.getMonth() + 1, d: d.getDate(), h: d.getHours() }; }
   }
   const keyOf = (y, m, d) => '' + y + pad(m) + pad(d);
-  const todayKey = () => { const p = tzNowParts(); return keyOf(p.y, p.m, p.d); };
+  // календарная дата в поясе пользователя
+  const calendarKey = () => { const p = tzNowParts(); return keyOf(p.y, p.m, p.d); };
+  // день поклонения (v2.4.2): длится до Фаджра. Ночь — Иша, витр, тахаджуд, азкары перед сном — принадлежит дню,
+  // после Иши которого она наступила; новый день открывается с Фаджром. Без города — до 4:00.
+  const todayKey = () => {
+    const k = calendarKey();
+    if (S.set.lat == null || typeof adhan === 'undefined') return tzNowParts().h < 4 ? addDays(k, -1) : k;
+    const T = prayerTimes(k);
+    return T && new Date() < T.fajr ? addDays(k, -1) : k;
+  };
   const parseKey = (k) => ({ y: +k.slice(0, 4), m: +k.slice(4, 6), d: +k.slice(6, 8) });
   const dateOfKey = (k) => { const p = parseKey(k); return new Date(p.y, p.m - 1, p.d, 12); };
   const addDays = (k, n) => { const d = dateOfKey(k); d.setDate(d.getDate() + n); return keyOf(d.getFullYear(), d.getMonth() + 1, d.getDate()); };
   const weekday = (k) => dateOfKey(k).getDay();
+  const WD_ACC = ['воскресенье', 'понедельник', 'вторник', 'среду', 'четверг', 'пятницу', 'субботу'];
   const isFriday = (k) => weekday(k) === 5;
   const fmtDate = (k) => { const p = parseKey(k); return p.d + ' ' + MONTHS_GEN[p.m - 1]; };
   const fmtTime = (date) => { if (!date) return '—'; try { return new Intl.DateTimeFormat('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: S.set.tz || undefined }).format(date); } catch (e) { return pad(date.getHours()) + ':' + pad(date.getMinutes()); } };
@@ -294,7 +304,7 @@
     return n;
   }
   // сунна при намазе для листа статуса (пусто на уровне «Начало» и в простом режиме)
-  const APP_VERSION = '2.4.0';
+  const APP_VERSION = '2.4.2';
   function prayerSunna(id, k) {
     if (!(S.set.detailed && S.set.level !== 'start')) return [];
     const d = getDay(k), dp = dayPlan(k);
@@ -974,7 +984,8 @@
     const sc = scores(k), T = prayerTimes(k), sk = isToday ? skyState() : null, plan = planFor(k);
     const parts = [], p = parseKey(k), v = sc ? sc.overall : 0, dpH = dayPlan(k);
     const note = dayNote(k);
-    parts.push('<header class="td-top"><div class="col"><span class="td-date">' + WD_FULL[weekday(k)] + ', ' + fmtDate(k) + (isToday ? '' : ' ' + p.y) + (S.set.city ? ' · ' + esc(S.set.city) : '') + '</span><span class="td-hijri">' + hijriText(k) + '</span>' + (note ? '<span class="dnote">' + I.spark + esc(note) + '</span>' : '') + '</div>' +
+    const nightOf = isToday && calendarKey() !== k ? ' · ночь на ' + WD_ACC[weekday(calendarKey())] : '';
+    parts.push('<header class="td-top"><div class="col"><span class="td-date">' + WD_FULL[weekday(k)] + ', ' + fmtDate(k) + (isToday ? '' : ' ' + p.y) + nightOf + (S.set.city && !nightOf ? ' · ' + esc(S.set.city) : '') + '</span><span class="td-hijri">' + hijriText(k) + '</span>' + (note ? '<span class="dnote">' + I.spark + esc(note) + '</span>' : '') + '</div>' +
       '<button class="td-ring' + (v > 1 ? ' over' : '') + '" data-a="tab" data-v="progress" aria-label="' + (dpH.mode === 'm' ? 'Минимальный день' : 'План дня') + ': ' + pctText(v) + ', ' + dpH.done + ' из ' + dpH.n + '. Открыть прогресс">' + ring2(v, 48, 20, 4.5) + '<span class="num">' + pctText(v) + '</span></button></header>');
     if (!isToday) parts.push('<button class="card back-day" data-a="backToday"><span class="li-c"><span class="li-t">Вы отмечаете ' + fmtDate(k) + '</span><span class="li-m">Нажмите, чтобы вернуться к сегодняшнему дню</span></span>' + I.chev + '</button>');
     if (isToday) parts.push(vHero2(k, d));
