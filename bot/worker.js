@@ -92,16 +92,32 @@ async function putCard(env, uid, k, p, msg, state) { await db(env).prepare('INSE
    Приложение присылает дни с временем изменения u и время, когда оно в последний раз получало отметки бота (seen).
    Отметка бота сохраняется, если приложение о ней не знало (в приложении пусто, а бот отметил после seen)
    или если она новее изменения дня в приложении. Ответ — отметки, которых в приложении нет. */
-const validPc = (p) => (p && +p.n >= 5 && +p.n <= 60 ? { n: +p.n, dn: Math.max(0, +p.dn || 0), ex: Math.max(0, +p.ex || 0), jm: Array.isArray(p.jm) ? p.jm.filter((x) => PR.some((y) => y[0] === x)) : [] } : null);
-// итог дня по личному плану: фарды и джамаат — по отметкам сервера (в том числе из бота), остальное — как прислало приложение
+// итог дня из приложения. v3: { v: 3, hn — привычек, hd — выполнено (без джамаата), ex — нафиль (без джамаата), jm — намазы привычки джамаата, mn — день «только основа» }
+// старый формат (v2.4: n, dn, ex, jm) ещё принимаем от не обновлённых копий приложения
+const jmList = (a) => (Array.isArray(a) ? a.filter((x) => PR.some((y) => y[0] === x)) : []);
+const validPc = (p) => {
+  if (!p || typeof p !== 'object') return null;
+  if (+p.v === 3) { const hn = +p.hn; if (!(hn >= 0 && hn <= 30)) return null; return { v: 3, hn, hd: clampN(p.hd, 0, hn), ex: clampN(p.ex, 0, 60), jm: jmList(p.jm), mn: p.mn ? 1 : 0 }; }
+  return +p.n >= 5 && +p.n <= 60 ? { n: +p.n, dn: Math.max(0, +p.dn || 0), ex: Math.max(0, +p.ex || 0), jm: jmList(p.jm) } : null;
+};
+const clampN = (v, a, b) => Math.min(b, Math.max(a, Math.round(+v || 0)));
+// состояние дня, как в приложении: none → started → saved (все пять фардов) → plan (и все привычки)
 export function planOf(d) {
   const pc = d.pc; if (!pc) return null;
   const JM = { mosque: 1, jamaat: 1, juma: 1 };
   const fd = PR.filter(([p]) => OK_STATUS(statusOf(d, p))).length;
-  const jmIn = PR.filter(([p]) => pc.jm.indexOf(p) >= 0 && JM[statusOf(d, p)]).length;
+  const missed = PR.some(([p]) => statusOf(d, p) === 'missed');
   const jmEx = PR.filter(([p]) => pc.jm.indexOf(p) < 0 && JM[statusOf(d, p)]).length;
-  const done = fd + pc.dn + jmIn, complete = done >= pc.n, ex = pc.ex + jmEx;
-  return { n: pc.n, done, ex, complete, pct: Math.round((done + (complete ? ex : 0)) * 100 / pc.n), missed: PR.some(([p]) => statusOf(d, p) === 'missed') };
+  if (pc.v === 3) {
+    const jmOk = pc.jm.length > 0 && pc.jm.every((p) => JM[statusOf(d, p)]);
+    const hn = pc.mn ? 0 : pc.hn, hd = pc.mn ? 0 : Math.min(hn, pc.hd + (jmOk ? 1 : 0)), ex = pc.ex + jmEx;
+    const saved = fd === 5, complete = saved && hd === hn;
+    return { v: 3, fd, hn, hd, ex, saved, complete, rest: !!pc.mn, missed, state: complete ? 'plan' : saved ? 'saved' : fd || missed || hd || ex ? 'started' : 'none' };
+  }
+  // v2.4 → переводим в состояния (без процентов)
+  const jmIn = PR.filter(([p]) => pc.jm.indexOf(p) >= 0 && JM[statusOf(d, p)]).length;
+  const hn = Math.max(0, pc.n - 5), hd = Math.min(hn, pc.dn + jmIn), saved = fd === 5, complete = saved && hd >= hn;
+  return { v: 2, fd, hn, hd, ex: pc.ex + jmEx, saved, complete, rest: false, missed, state: complete ? 'plan' : saved ? 'saved' : fd || missed ? 'started' : 'none' };
 }
 export function mergeDay(server, app, seen) {
   const out = { f: {}, am: !!app.am, ae: !!app.ae, sl: !!app.sl, u: Math.max(server.u || 0, app.u || 0), pc: validPc(app.pc) || server.pc || null }, diff = {};
@@ -294,8 +310,9 @@ async function sendSummary(env, u, k, sd, d) {
   const pl = planOf(d);
   let head = 'Намазы: ' + marked + ' из 5', tail = marked === 5 ? '\n\nАльхамдулиллях — все пять намазов.' : '';
   if (pl) {
-    head = 'План дня: ' + pl.pct + '% · ' + pl.done + ' из ' + pl.n + (pl.ex ? (pl.complete ? ' и ' + pl.ex + ' сверх плана' : ' · ещё ' + pl.ex + ' отдельно') : '');
-    tail = pl.complete ? (pl.pct > 100 ? '\n\nЭто тауфик от Аллаха. Просите у Него постоянства.' : '\n\nАльхамдулиллях, план выполнен. Пусть Аллах примет.') : (pl.missed ? '\n\nПропущенный намаз можно восполнить. Завтра — новый день.' : '');
+    // v3.0: состояние дня вместо процента; нафиль — просто число со звёздочкой
+    head = (pl.complete ? 'День по плану' : pl.saved ? 'День сохранён' : 'Намазы: ' + pl.fd + ' из 5') + (pl.hn ? ' · привычки ' + pl.hd + ' из ' + pl.hn : pl.rest ? ' · только основа' : '') + (pl.ex ? ' · нафиль ✦' + pl.ex : '');
+    tail = pl.complete ? '\n\nАльхамдулиллях, день по плану. Пусть Аллах примет.' + (pl.rest ? ' Привычки сегодня отдыхали.' : '') : pl.saved ? '\n\nАльхамдулиллях — все пять намазов, день сохранён.' + (pl.rest ? ' Привычки сегодня отдыхают.' : '') : (pl.missed ? '\n\nПропущенный намаз можно восполнить. Завтра — новый день.' : '');
   }
   const az = 'Азкары: утро ' + (d.am ? '✓' : '—') + ' · вечер ' + (d.ae ? '✓' : '—');
   await send(env, u, '<b>Итог дня · ' + dayTitle(k) + '</b>\n\n' + head + '\n' + lines.join('\n') + '\n\n' + az + tail, [appBtn(env, 'Подробнее в приложении', 'progress')].filter((x) => x.length), true);
