@@ -848,3 +848,47 @@ button.hx-main { cursor: pointer; }
 .hd-s { margin: 0; font-size: 13px; font-weight: 800; color: var(--gold-hi); }
 .hd-link { border: 0; background: none; padding: 0; font: inherit; font-weight: 700; color: var(--gold-hi); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .pl-presets.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+/* ===== v3.0: основа, привычки, нафиль ===== */
+.hb-tag { display: inline-flex; align-items: center; margin-left: 6px; padding: 2px 7px; border-radius: 8px; background: var(--emerald-soft); color: var(--emerald-text); font-size: 11px; font-weight: 800; vertical-align: 2px; white-space: nowrap; }
+.hb-row { display: flex; flex-direction: column; }
+.hb-row + .hb-row { border-top: 1px solid var(--line); }
+.hb-row > .li, .hb-row > .hx { border-top: 0 !important; }
+.hb-chips { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 16px 14px; }
+.sh-sec + .hb-chips { padding: 0; }
+.hb-chips .chip { min-height: 34px; padding: 0 12px; font-size: 13px; }
+/* значок дня: пять дуг фардов, в центре — счёт, привычки или галочка */
+.td-ring.db { width: 48px; height: 48px; }
+.td-ring.db .num { font-size: 12.5px; font-weight: 800; letter-spacing: -.2px; }
+.td-ring.db .db-h { color: var(--emerald-text); }
+.td-ring.db .db-ok { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--gold); color: var(--on-gold); }
+.td-ring.db .db-ok svg { position: static; width: 13px; height: 13px; }
+.td-ring.db .db-star { position: absolute; top: -3px; right: -4px; font-style: normal; font-size: 12px; line-height: 1; color: var(--gold-hi); text-shadow: 0 0 6px rgba(230, 190, 110, .55); }
+.td-ring.db.done svg circle { stroke: var(--gold); }
+.td-ring.db.sm { width: 36px; height: 36px; }
+.td-ring.db.sm .num { font-size: 10px; }
+.td-ring.db.sm .db-ok { width: 18px; height: 18px; }
+.td-ring.db.sm .db-ok svg { width: 11px; height: 11px; }
+.td-ring.db.sm .db-star { font-size: 10px; top: -3px; right: -3px; }
+.td-ring.db.fu { opacity: .35; }
+/* неделя в «Прогрессе» */
+.pr-sum { flex-direction: column; align-items: stretch; gap: 14px; }
+.pr-sum-h { display: flex; justify-content: space-between; align-items: flex-end; }
+.pr-sum-h .pr-big { font-family: var(--serif); font-size: 40px; line-height: 1; color: var(--gold-hi); }
+.pr-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.pr-day { border: 0; background: none; color: var(--sub); padding: 6px 0 4px; border-radius: 12px; display: flex; flex-direction: column; align-items: center; gap: 5px; transition: transform .12s ease, background .2s ease; }
+.pr-day:active:not(:disabled) { transform: scale(.94); }
+.pr-day.on { background: var(--surface2, rgba(255, 255, 255, .05)); color: var(--text); }
+.pr-day small { font-size: 11px; font-weight: 700; }
+.pr-dots i.na { background: transparent; box-shadow: inset 0 0 0 1px var(--line2); }
+/* месяц: звёздочка — в этот день были нафиль */
+.cal .hst { position: relative; }
+.cal .hst::after { content: '✦'; position: absolute; top: 1px; right: 3px; font-size: 8px; line-height: 1; color: var(--gold-hi); }
+.cal .h4c.hst::after { color: #1A1406; }
+.pg-leg .hst { position: relative; }
+.pg-leg i.h0.hst { background: var(--track); }
+.pg-leg i.hst::after { content: '✦'; position: absolute; inset: 0; display: grid; place-items: center; font-size: 8px; font-style: normal; color: var(--gold-hi); }
+.hb-star { flex: none; width: 36px; height: 36px; border-radius: 12px; display: grid; place-items: center; font-size: 17px; line-height: 1; color: var(--muted); background: var(--surface2); transition: color .25s ease, background .25s ease, transform .3s cubic-bezier(.2, .9, .3, 1.4); }
+.hb-star.on { color: var(--gold-hi); background: var(--gold-soft); text-shadow: 0 0 10px rgba(230, 190, 110, .5); }
+.li:active .hb-star { transform: scale(.9) rotate(-12deg); }
+.pr-sum-h .pr-big > span { font-family: var(--sans); letter-spacing: 0; }
